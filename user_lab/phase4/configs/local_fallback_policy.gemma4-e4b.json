@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "model": {
+    "name": "gemma4:e4b",
+    "runtime": "ollama",
+    "endpoint": "http://127.0.0.1:11434",
+    "family": "gemma4",
+    "parameterSize": "8.0B",
+    "quantization": "Q4_K_M",
+    "approxSizeGb": 9.6
+  },
+  "evidence": {
+    "sourceExperiment": "4b",
+    "runCount": 10,
+    "successRate": 1.0,
+    "qualityPassRate": 0.6,
+    "medianDurationMs": 5147,
+    "medianTokensPerSecond": 16.94
+  },
+  "eligibleTaskClasses": [
+    {
+      "id": "local_short_summary",
+      "confidence": "medium",
+      "maxInputChars": 3000,
+      "maxOutputWords": 200,
+      "requiresStrictJson": false
+    },
+    {
+      "id": "local_small_code_explanation",
+      "confidence": "medium",
+      "maxInputChars": 2500,
+      "maxOutputWords": 200,
+      "requiresStrictJson": false
+    },
+    {
+      "id": "local_short_policy_text",
+      "confidence": "medium",
+      "maxInputChars": 2500,
+      "maxOutputWords": 200,
+      "requiresStrictJson": false
+    }
+  ],
+  "ineligibleTaskClasses": [
+    "strict_json_extraction",
+    "classification_exact_schema",
+    "structured_extraction",
+    "multi_file_coding",
+    "repo_wide_analysis",
+    "security_analysis",
+    "financial_legal_medical_advice",
+    "external_provider_routing_decisions",
+    "long_context_summarization",
+    "autonomous_code_edits",
+    "command_execution_planning",
+    "high_factual_precision_tasks"
+  ],
+  "recommendedOptions": {
+    "temperature": 0.1,
+    "think": false
+  },
+  "routingEnabled": false,
+  "notes": [
+    "Candidate policy only. Do not route automatically yet.",
+    "Based on synthetic local-only smoke benchmark.",
+    "Not suitable for strict JSON tasks based on 4b."
+  ]
+}

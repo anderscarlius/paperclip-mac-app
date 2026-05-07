@@ -1,0 +1,59 @@
+Time: 2026-05-03T23:23:25+0200
+Change: Mapped the native Paperclip Desktop shell, setup wizard, settings tabs, and embedded web app routes for first-run relevance.
+Expected effect: Establish a code-grounded picture of what a new user actually sees and where readiness state is surfaced.
+Observed result: Setup is wizard-gated, runtime-heavy, and company-first; diagnostics are strong but fragmented.
+Next action: Write the UI map and current first-run journey docs.
+
+Time: 2026-05-03T23:23:25+0200
+Change: Cross-checked earlier lab outputs for auth preflight, runtime diagnostics, path risk, and local fallback product direction.
+Expected effect: Anchor the Phase 5A audit in already-proven setup/runtime constraints instead of treating the UI in isolation.
+Observed result: Phase 1 and Phase 2 materially improved diagnostics, but those signals are not yet assembled into a simple first-run health surface; Phase 4 confirms Local AI should remain optional.
+Next action: Write the friction list, setup health screen spec, and first safe task spec.
+
+Time: 2026-05-03T23:23:25+0200
+Change: Defined a proposed onboarding path centered on setup health, workspace selection, and a read-only first safe task.
+Expected effect: Produce a concrete product direction for private alpha without changing runtime behavior.
+Observed result: The clearest missing layer is a unified setup health screen plus an `Analyze this workspace` first-value flow.
+Next action: Validate created files and summarize Phase 5A.
+
+Time: 2026-05-04T08:05:37+0200
+Change: Converted the Phase 5A setup health recommendation into an MVP screen definition, reusable card contract, and user-facing copy set.
+Expected effect: Make the setup health concept concrete enough to implement without changing runtime behavior or rebuilding onboarding first.
+Observed result: The screen now has a clear top summary model, five-card structure, CTA hierarchy, and explicit rules for what blocks the first safe task versus what remains optional.
+Next action: Map each card to honest existing data sources and define high-signal UI states.
+
+Time: 2026-05-04T08:05:37+0200
+Change: Mapped Setup Health cards to current runtime, lab, and UI signals, marking each as available now, needing a small bridge, or future.
+Expected effect: Prevent the MVP from over-promising on signals that only exist in artifacts or deep operator surfaces today.
+Observed result: Runtime and Local AI are easiest to surface now, while Cloud AI preflight and Workspace path health need the most important small bridges for productization.
+Next action: Finalize the phased implementation plan and recommend the safest next build step.
+
+Time: 2026-05-04T08:05:37+0200
+Change: Broke implementation into 5C through 5G, from static mock to signal connection, workspace selection, first safe task contract, and onboarding entry choice.
+Expected effect: Give the next phase a small, low-risk implementation target instead of a broad onboarding rewrite.
+Observed result: Phase 5C emerged as the clear next experiment because it validates layout and copy before any signal plumbing or behavior changes.
+Next action: Validate Phase 5B deliverables and hand off the next prompt for 5C.
+
+Time: 2026-05-04T08:05:37+0200
+Change: Implemented a static Setup Health page, mock data contract, and narrow preview route under the existing `tests/ux/*` route family.
+Expected effect: Make the Setup Health MVP concrete and previewable without backend wiring or runtime changes.
+Observed result: The mock now renders the five cards, top readiness summary, CTAs, scenario switching, and advanced details using local state only.
+Next action: Run narrow validation and confirm the mock is safe to keep as the base for 5D.
+
+Time: 2026-05-05T17:27:00+0200
+Change: Added a `SetupHealthDiagnostics` contract, a pure `buildSetupHealthViewModel()` mapper, and live preview wiring that reads `/api/health` plus recent heartbeat run summaries when available.
+Expected effect: Move Setup Health from static preview to honest live diagnostics without introducing any runtime behavior changes.
+Observed result: Cloud AI, Local AI, and Runtime now reflect existing real signals, while Workspace and Developer Tools remain safe fallback states until a small bridge exists.
+Next action: Validate the focused UI test suite, run minimal validation, and recommend Phase 5E for real workspace selection plus the first safe task entry point.
+
+Time: 2026-05-05T20:56:00+0200
+Change: Added a workspace diagnostics contract, a pure path-health classifier, and a local read-only Analyze preview flow to Setup Health.
+Expected effect: Make workspace readiness understandable enough for a first user journey without executing analysis or changing runtime behavior.
+Observed result: Setup Health can now distinguish missing, ready, low-risk, and medium-risk workspace paths; the Analyze CTA is disabled without a workspace and opens a confirmation preview when a workspace is present.
+Next action: Validate the focused UI suite, document the missing real workspace bridge, and recommend Phase 5F for the first safe task contract.
+
+Time: 2026-05-06T00:00:00+0200
+Change: Audited Git/GitHub state, reviewed `user_lab` artifact hygiene, added low-risk ignore rules for local caches and generated JSON, and defined the Phase 5F first safe-task contracts.
+Expected effect: Make the repo easier to commit cleanly and give the `Analyze this workspace` journey a clear non-executing request, safety, result, prompt, and copy contract.
+Observed result: The repo is confirmed to be pre-initial-commit with no remote, noisy generated JSON is now ignored, and the first safe-task design is documented end-to-end without enabling execution.
+Next action: Run file-presence validation and recommend Phase 5G for request-construction and preview-payload UI work.
