@@ -150,6 +150,73 @@ export type AnalyzeWorkspaceHandoffResult = {
   };
 };
 
+export type AnalyzeWorkspaceTopLevelEntry = {
+  name: string;
+  kind: "file" | "directory" | "unknown";
+  redacted?: boolean;
+  reason?: string;
+};
+
+export type AnalyzeWorkspaceManifestIndicator = {
+  name: string;
+  present: boolean;
+  category:
+    | "javascript"
+    | "swift"
+    | "python"
+    | "rust"
+    | "go"
+    | "ruby"
+    | "php"
+    | "readme"
+    | "git"
+    | "docker"
+    | "source"
+    | "test"
+    | "docs"
+    | "other";
+};
+
+export type AnalyzeWorkspaceMetadataSnapshot = {
+  schemaVersion: 1;
+  snapshotType: "analyze_workspace_metadata_snapshot";
+  collectionMode: "provided_fixture_only" | "future_filesystem_read";
+  workspace: {
+    displayName?: string | null;
+    pathHealth?: {
+      risk: "none" | "low" | "medium" | "unknown";
+      reasons: string[];
+    } | null;
+  };
+  topLevelEntries: AnalyzeWorkspaceTopLevelEntry[];
+  manifestIndicators: AnalyzeWorkspaceManifestIndicator[];
+  limits: {
+    maxTopLevelEntries: number;
+    recursiveScan: false;
+    fileContentsRead: false;
+    commandsRun: false;
+    networkAccessed: false;
+  };
+  redactions: Array<{
+    name: string;
+    reason: string;
+  }>;
+  notCollected: string[];
+  safety: {
+    readOnly: true;
+    filesChanged: false;
+    commandsRun: false;
+    networkAccessed: false;
+    agentStarted: false;
+    localFallbackUsed: false;
+    automaticRoutingUsed: false;
+  };
+};
+
+export type AnalyzeWorkspaceMetadataSnapshotValidationResult =
+  | { ok: true }
+  | { ok: false; errors: string[] };
+
 export type SetupHealthDiagnostics = {
   cloudAi?: {
     authStatus?: "connected" | "missing" | "unknown";
@@ -194,11 +261,62 @@ const PRINTABLE_ASCII_RE = /^[\x20-\x7E]+$/;
 const NON_ASCII_RE = /[^\x00-\x7F]/u;
 const SPACES_RE = /\s/u;
 const COMBINING_MARK_RE = /\p{M}/u;
+const REDACTED_ENTRY_NAME = "[redacted]";
+const SENSITIVE_ENTRY_NAMES = new Set([
+  ".env",
+  ".env.local",
+  ".env.production",
+  "id_rsa",
+  "id_ed25519",
+  "credentials",
+  "credentials.json",
+  "auth.json",
+  "device-auth.json",
+  "token",
+  "tokens",
+  "secret",
+  "secrets",
+  ".ssh",
+]);
+const MANIFEST_INDICATOR_CATEGORIES = new Map<string, AnalyzeWorkspaceManifestIndicator["category"]>([
+  ["package.json", "javascript"],
+  ["pnpm-lock.yaml", "javascript"],
+  ["package-lock.json", "javascript"],
+  ["yarn.lock", "javascript"],
+  ["bun.lockb", "javascript"],
+  ["package.swift", "swift"],
+  ["pyproject.toml", "python"],
+  ["requirements.txt", "python"],
+  ["poetry.lock", "python"],
+  ["cargo.toml", "rust"],
+  ["cargo.lock", "rust"],
+  ["go.mod", "go"],
+  ["go.sum", "go"],
+  ["gemfile", "ruby"],
+  ["gemfile.lock", "ruby"],
+  ["composer.json", "php"],
+  ["composer.lock", "php"],
+  ["readme", "readme"],
+  ["readme.md", "readme"],
+  ["readme.txt", "readme"],
+  [".git", "git"],
+  ["dockerfile", "docker"],
+  ["docker-compose.yml", "docker"],
+  ["src", "source"],
+  ["sources", "source"],
+  ["test", "test"],
+  ["tests", "test"],
+  ["docs", "docs"],
+]);
 
 function compactDetails(
   details: Array<SetupHealthDetail | null>,
 ): SetupHealthDetail[] {
   return details.filter((detail): detail is SetupHealthDetail => detail !== null);
+}
+
+function normalizeWorkspaceEntryName(name: string): string {
+  return name.trim().toLowerCase();
 }
 
 function detail(label: string, value: string | null | undefined, helpText?: string): SetupHealthDetail | null {
@@ -470,6 +588,169 @@ export function prepareAnalyzeWorkspaceHandoff(
         : "Analyze Workspace request was not accepted. Fix validation errors before execution is wired.",
     },
   };
+}
+
+export function isSensitiveWorkspaceEntryName(name: string): boolean {
+  const normalized = normalizeWorkspaceEntryName(name);
+  if (SENSITIVE_ENTRY_NAMES.has(normalized)) return true;
+  if (normalized.startsWith(".env.")) return true;
+  if (normalized.includes("credential")) return true;
+  if (normalized.includes("token")) return true;
+  if (normalized === "secret" || normalized === "secrets") return true;
+  return false;
+}
+
+export function classifyManifestIndicator(
+  name: string,
+): AnalyzeWorkspaceManifestIndicator | null {
+  const normalized = normalizeWorkspaceEntryName(name);
+  const category = MANIFEST_INDICATOR_CATEGORIES.get(normalized);
+  if (!category) return null;
+
+  return {
+    name,
+    present: true,
+    category,
+  };
+}
+
+export function buildAnalyzeWorkspaceMetadataSnapshotFromEntries(input: {
+  workspace?: {
+    displayName?: string | null;
+    pathHealth?: {
+      risk: "none" | "low" | "medium" | "unknown";
+      reasons: string[];
+    } | null;
+  };
+  entries: Array<{
+    name: string;
+    kind?: "file" | "directory" | "unknown";
+  }>;
+  maxTopLevelEntries?: number;
+}): AnalyzeWorkspaceMetadataSnapshot {
+  const maxTopLevelEntries = input.maxTopLevelEntries ?? 50;
+  const trimmedEntries = input.entries.slice(0, maxTopLevelEntries);
+  const redactions: AnalyzeWorkspaceMetadataSnapshot["redactions"] = [];
+  const manifestIndicators: AnalyzeWorkspaceManifestIndicator[] = [];
+  const topLevelEntries: AnalyzeWorkspaceTopLevelEntry[] = [];
+  const seenIndicators = new Set<string>();
+
+  for (const entry of trimmedEntries) {
+    const kind = entry.kind ?? "unknown";
+    if (isSensitiveWorkspaceEntryName(entry.name)) {
+      const reason = "Sensitive-looking top-level entry name was redacted.";
+      topLevelEntries.push({
+        name: REDACTED_ENTRY_NAME,
+        kind,
+        redacted: true,
+        reason,
+      });
+      redactions.push({
+        name: REDACTED_ENTRY_NAME,
+        reason,
+      });
+      continue;
+    }
+
+    topLevelEntries.push({
+      name: entry.name,
+      kind,
+    });
+
+    const indicator = classifyManifestIndicator(entry.name);
+    if (indicator && !seenIndicators.has(normalizeWorkspaceEntryName(indicator.name))) {
+      seenIndicators.add(normalizeWorkspaceEntryName(indicator.name));
+      manifestIndicators.push(indicator);
+    }
+  }
+
+  const notCollected = [
+    "No file contents were read.",
+    "No commands were run.",
+    "No recursive scan was performed.",
+    "No secrets were read.",
+    "No AI inference was performed.",
+  ];
+
+  if (input.entries.length > maxTopLevelEntries) {
+    notCollected.push(`Top-level entry list was truncated at ${maxTopLevelEntries} entries.`);
+  }
+
+  return {
+    schemaVersion: 1,
+    snapshotType: "analyze_workspace_metadata_snapshot",
+    collectionMode: "provided_fixture_only",
+    workspace: {
+      displayName: input.workspace?.displayName ?? null,
+      pathHealth: input.workspace?.pathHealth ?? null,
+    },
+    topLevelEntries,
+    manifestIndicators,
+    limits: {
+      maxTopLevelEntries,
+      recursiveScan: false,
+      fileContentsRead: false,
+      commandsRun: false,
+      networkAccessed: false,
+    },
+    redactions,
+    notCollected,
+    safety: {
+      readOnly: true,
+      filesChanged: false,
+      commandsRun: false,
+      networkAccessed: false,
+      agentStarted: false,
+      localFallbackUsed: false,
+      automaticRoutingUsed: false,
+    },
+  };
+}
+
+export function validateAnalyzeWorkspaceMetadataSnapshot(
+  snapshot: AnalyzeWorkspaceMetadataSnapshot,
+): AnalyzeWorkspaceMetadataSnapshotValidationResult {
+  const errors: string[] = [];
+
+  if (snapshot.schemaVersion !== 1) errors.push("schemaVersion must be 1.");
+  if (snapshot.snapshotType !== "analyze_workspace_metadata_snapshot") {
+    errors.push('snapshotType must be "analyze_workspace_metadata_snapshot".');
+  }
+  if (snapshot.collectionMode !== "provided_fixture_only") {
+    errors.push('collectionMode must be "provided_fixture_only" in Phase 5I.');
+  }
+  if (snapshot.limits.recursiveScan !== false) errors.push("limits.recursiveScan must be false.");
+  if (snapshot.limits.fileContentsRead !== false) errors.push("limits.fileContentsRead must be false.");
+  if (snapshot.limits.commandsRun !== false) errors.push("limits.commandsRun must be false.");
+  if (snapshot.limits.networkAccessed !== false) errors.push("limits.networkAccessed must be false.");
+  if (snapshot.safety.filesChanged !== false) errors.push("safety.filesChanged must be false.");
+  if (snapshot.safety.commandsRun !== false) errors.push("safety.commandsRun must be false.");
+  if (snapshot.safety.networkAccessed !== false) errors.push("safety.networkAccessed must be false.");
+  if (snapshot.safety.agentStarted !== false) errors.push("safety.agentStarted must be false.");
+  if (snapshot.safety.localFallbackUsed !== false) errors.push("safety.localFallbackUsed must be false.");
+  if (snapshot.safety.automaticRoutingUsed !== false) {
+    errors.push("safety.automaticRoutingUsed must be false.");
+  }
+
+  for (const entry of snapshot.topLevelEntries) {
+    if (entry.redacted === true) {
+      if (entry.name !== REDACTED_ENTRY_NAME) {
+        errors.push('Redacted top-level entries must use the "[redacted]" placeholder.');
+      }
+      continue;
+    }
+    if (isSensitiveWorkspaceEntryName(entry.name)) {
+      errors.push(`Sensitive top-level entry name must be redacted: ${entry.name}`);
+    }
+  }
+
+  for (const redaction of snapshot.redactions) {
+    if (redaction.name !== REDACTED_ENTRY_NAME) {
+      errors.push('Redaction records must not expose raw sensitive names.');
+    }
+  }
+
+  return errors.length > 0 ? { ok: false, errors } : { ok: true };
 }
 
 export function buildAnalyzeWorkspaceSetupState(

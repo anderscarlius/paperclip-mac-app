@@ -568,6 +568,9 @@ describe("SetupHealth", () => {
     expect(container.textContent).toContain("No agent has been started.");
     expect(container.textContent).toContain("No files have been read or changed.");
     expect(container.textContent).toContain("No commands have been run.");
+    expect(container.textContent).toContain("Future safe metadata scope");
+    expect(container.textContent).toContain("No recursive scan will be performed.");
+    expect(container.textContent).toContain("Secrets will not be read.");
     expect(container.textContent).not.toContain("Project summary");
 
     act(() => {

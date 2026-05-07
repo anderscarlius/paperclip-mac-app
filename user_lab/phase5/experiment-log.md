@@ -69,3 +69,9 @@ Change: Added a frontend-only Analyze Workspace handoff result, a pure prepare h
 Expected effect: Create a truthful frontend-to-runtime boundary that can accept a validated request without implying that analysis has run.
 Observed result: Setup Health can now prepare and display a non-executing handoff result, and the test suite confirms all execution-related safety flags remain false.
 Next action: Review the diff, run final safety checks, and publish Phase 5H as a clean commit and GitHub backup push.
+
+Time: 2026-05-07T22:35:00+0200
+Change: Added a fixture-only safe metadata snapshot contract, sensitive-name redaction helpers, manifest classification, snapshot validation, and a small Setup Health preview of future metadata scope.
+Expected effect: Define exactly what first-run Analyze Workspace metadata collection may inspect later, without enabling any real filesystem or AI execution.
+Observed result: Paperclip now has a test-covered snapshot model that stays filename-only, redacts sensitive-looking entries, enforces non-executing invariants, and keeps the UI honest about what 5J may collect next.
+Next action: Review the diff, confirm safety checks are clean, and publish Phase 5I as a commit and private GitHub backup push.

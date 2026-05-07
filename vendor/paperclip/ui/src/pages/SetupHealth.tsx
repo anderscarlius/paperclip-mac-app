@@ -665,6 +665,18 @@ export function SetupHealth() {
                   ) : null}
                 </div>
 
+                <div className="rounded-md border border-border/70 bg-background/70 px-3 py-3 text-sm text-muted-foreground">
+                  <div className="font-medium text-foreground">Future safe metadata scope</div>
+                  <div className="mt-1">
+                    The next phase will collect only limited read-only metadata such as top-level filenames, manifest presence, README presence, and path health.
+                  </div>
+                  <div className="mt-2">No file contents will be read in this phase.</div>
+                  <div>No commands will be run.</div>
+                  <div>No recursive scan will be performed.</div>
+                  <div>Secrets will not be read.</div>
+                  <div className="mt-2 text-xs">Example only</div>
+                </div>
+
                 <Collapsible>
                   <div className="flex flex-col gap-3">
                     <CollapsibleTrigger asChild>
