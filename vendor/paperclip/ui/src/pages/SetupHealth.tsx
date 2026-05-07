@@ -1,0 +1,579 @@
+import { useMemo, useState } from "react";
+import type { HeartbeatRun } from "@paperclipai/shared";
+import { useQuery } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { Separator } from "@/components/ui/separator";
+import { healthApi, type HealthStatus } from "@/api/health";
+import { heartbeatsApi } from "@/api/heartbeats";
+import { useCompany } from "@/context/CompanyContext";
+import { readLocalFallbackCandidateSignal } from "@/lib/local-fallback-offer";
+import { queryKeys } from "@/lib/queryKeys";
+import {
+  buildSetupHealthViewModel,
+  mockSetupHealthStates,
+  setupHealthOverallStatusLabel,
+  setupHealthStatusLabel,
+  type SetupHealthCard,
+  type SetupHealthDiagnostics,
+  type SetupHealthSeverity,
+} from "@/lib/setup-health";
+import { cn } from "@/lib/utils";
+
+type MockStateId = (typeof mockSetupHealthStates)[number]["id"];
+type ViewMode = "diagnostics" | "mock";
+
+function severityBadgeVariant(severity: SetupHealthSeverity): "default" | "secondary" | "outline" | "destructive" {
+  switch (severity) {
+    case "success":
+      return "default";
+    case "info":
+      return "secondary";
+    case "warning":
+      return "outline";
+    case "error":
+      return "destructive";
+  }
+}
+
+function overallToneClasses(overallStatus: "ready_to_start" | "needs_attention" | "optional_improvements_available") {
+  switch (overallStatus) {
+    case "ready_to_start":
+      return "border-emerald-500/30 bg-emerald-500/5";
+    case "needs_attention":
+      return "border-destructive/30 bg-destructive/5";
+    case "optional_improvements_available":
+      return "border-amber-500/30 bg-amber-500/5";
+  }
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function asNonEmptyString(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function readStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+    .filter((entry) => entry.length > 0);
+}
+
+function pickLatestRun(runs: HeartbeatRun[] | undefined): HeartbeatRun | null {
+  if (!runs || runs.length === 0) return null;
+
+  return [...runs].sort((left, right) => {
+    const leftTimestamp = new Date(
+      left.finishedAt ?? left.startedAt ?? left.createdAt,
+    ).getTime();
+    const rightTimestamp = new Date(
+      right.finishedAt ?? right.startedAt ?? right.createdAt,
+    ).getTime();
+    return rightTimestamp - leftTimestamp;
+  })[0] ?? null;
+}
+
+function readRunDiagnostics(run: HeartbeatRun | null): SetupHealthDiagnostics {
+  if (!run?.resultJson) {
+    return {
+      runtime: {
+        lastRunStatus: "unknown",
+        warnings: [],
+        diagnosticsAvailable: false,
+      },
+    };
+  }
+
+  const resultJson = run.resultJson;
+  const runtimeDiagnostics = asRecord(resultJson.runtimeDiagnostics);
+  const runtimeContext = asRecord(resultJson.runtimeContext);
+  const modelInfo = asRecord(runtimeDiagnostics?.modelInfo) ?? asRecord(runtimeContext?.modelInfo);
+  const localFallbackCandidate = readLocalFallbackCandidateSignal(resultJson);
+  const warningMessages = readStringArray(resultJson.warnings);
+  const modelHosting = asNonEmptyString(runtimeDiagnostics?.modelHosting) ?? asNonEmptyString(runtimeContext?.modelHosting);
+
+  let localAiStatus: SetupHealthDiagnostics["localAi"] extends { status?: infer T } ? T : never = "unknown";
+  if (localFallbackCandidate?.available) {
+    localAiStatus = "available_candidate";
+  } else if (modelHosting === "local") {
+    localAiStatus = "available";
+  } else if (localFallbackCandidate?.decision === "not_available") {
+    localAiStatus = "unavailable";
+  }
+
+  const resolvedModelCandidate =
+    asNonEmptyString(runtimeDiagnostics?.resolvedModel)
+    ?? asNonEmptyString(modelInfo?.resolvedModel)
+    ?? asNonEmptyString(modelInfo?.reportedModel)
+    ?? asNonEmptyString(runtimeContext?.model);
+
+  return {
+    cloudAi: {
+      provider: asNonEmptyString(runtimeDiagnostics?.provider) ?? asNonEmptyString(runtimeContext?.provider),
+      modelHosting: modelHosting === "cloud" || modelHosting === "local" ? modelHosting : "unknown",
+      model: resolvedModelCandidate,
+      modelInfo: {
+        requestedModel:
+          asNonEmptyString(runtimeDiagnostics?.requestedModel)
+          ?? asNonEmptyString(modelInfo?.requestedModel),
+        resolvedModel: resolvedModelCandidate,
+        reportedModel:
+          asNonEmptyString(runtimeDiagnostics?.reportedModel)
+          ?? asNonEmptyString(modelInfo?.reportedModel),
+        modelSource:
+          asNonEmptyString(runtimeDiagnostics?.modelSource)
+          ?? asNonEmptyString(modelInfo?.modelSource),
+        confidence:
+          asNonEmptyString(runtimeDiagnostics?.confidence)
+          ?? asNonEmptyString(modelInfo?.confidence),
+        unknownReason:
+          asNonEmptyString(runtimeDiagnostics?.unknownReason)
+          ?? asNonEmptyString(modelInfo?.unknownReason),
+      },
+    },
+    localAi: {
+      status: localAiStatus,
+      runtime: localFallbackCandidate?.runtime ?? (modelHosting === "local" ? "ollama" : null),
+      model: localFallbackCandidate?.model ?? (modelHosting === "local" ? resolvedModelCandidate : null),
+      confidence: localFallbackCandidate?.confidence ?? "unknown",
+      routingEnabled: localFallbackCandidate?.routingEnabled,
+    },
+    runtime: {
+      lastRunStatus:
+        run.status === "succeeded"
+          ? "success"
+          : run.status === "failed" || run.status === "cancelled" || run.status === "timed_out"
+            ? "failed"
+            : "unknown",
+      warnings: warningMessages.map((message) => ({ message, severity: "warning" })),
+      diagnosticsAvailable:
+        runtimeDiagnostics !== null
+        || runtimeContext !== null
+        || warningMessages.length > 0,
+    },
+  };
+}
+
+function buildDiagnosticsFromSources({
+  health,
+  latestRun,
+}: {
+  health: HealthStatus | undefined;
+  latestRun: HeartbeatRun | null;
+}): SetupHealthDiagnostics | undefined {
+  if (!health && !latestRun) return undefined;
+
+  const runDiagnostics = readRunDiagnostics(latestRun);
+  const modelHosting = runDiagnostics.cloudAi?.modelHosting;
+  const inferredAuthStatus =
+    modelHosting === "cloud"
+      ? "connected"
+      : health?.authReady === true
+        ? "connected"
+        : health?.authReady === false
+          ? "missing"
+          : "unknown";
+
+  return {
+    cloudAi: {
+      authStatus: inferredAuthStatus,
+      provider: runDiagnostics.cloudAi?.provider ?? null,
+      modelHosting: modelHosting ?? "unknown",
+      model: runDiagnostics.cloudAi?.model ?? null,
+      modelInfo: runDiagnostics.cloudAi?.modelInfo ?? null,
+    },
+    localAi: runDiagnostics.localAi,
+    workspace: undefined,
+    developerTools: undefined,
+    runtime: {
+      lastRunStatus: runDiagnostics.runtime?.lastRunStatus ?? "unknown",
+      warnings: runDiagnostics.runtime?.warnings ?? [],
+      diagnosticsAvailable:
+        Boolean(health)
+        || runDiagnostics.runtime?.diagnosticsAvailable === true,
+    },
+  };
+}
+
+function StatusPill({
+  status,
+  severity,
+}: {
+  status: SetupHealthCard["status"];
+  severity: SetupHealthSeverity;
+}) {
+  return (
+    <Badge variant={severityBadgeVariant(severity)}>
+      {setupHealthStatusLabel(status)}
+    </Badge>
+  );
+}
+
+function SetupHealthCardView({
+  card,
+  onAction,
+}: {
+  card: SetupHealthCard;
+  onAction: (label: string) => void;
+}) {
+  return (
+    <Card className="gap-4 py-5">
+      <CardHeader className="gap-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex flex-col gap-2">
+            <CardTitle>{card.title}</CardTitle>
+            <StatusPill status={card.status} severity={card.severity} />
+          </div>
+          <CardAction className="self-start" />
+        </div>
+        <CardDescription>{card.summary}</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        {card.primaryAction || card.secondaryAction ? (
+          <div className="flex flex-wrap gap-2">
+            {card.primaryAction ? (
+              <Button size="sm" onClick={() => onAction(card.primaryAction!.label)}>
+                {card.primaryAction.label}
+              </Button>
+            ) : null}
+            {card.secondaryAction ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onAction(card.secondaryAction!.label)}
+              >
+                {card.secondaryAction.label}
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+
+        <Collapsible>
+          <div className="flex flex-col gap-3">
+            <CollapsibleTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="justify-start px-0 text-muted-foreground hover:text-foreground"
+              >
+                Advanced details
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="flex flex-col gap-3">
+              {card.advancedDetails.map((detail) => (
+                <div key={`${card.id}-${detail.label}`} className="flex flex-col gap-1">
+                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    {detail.label}
+                  </div>
+                  <div className="text-sm">{detail.value}</div>
+                  {detail.helpText ? (
+                    <div className="text-xs text-muted-foreground">{detail.helpText}</div>
+                  ) : null}
+                </div>
+              ))}
+            </CollapsibleContent>
+          </div>
+        </Collapsible>
+      </CardContent>
+    </Card>
+  );
+}
+
+function liveDiagnosticsNote({
+  diagnostics,
+  isHealthLoading,
+  areRunsLoading,
+  selectedCompanyId,
+}: {
+  diagnostics: SetupHealthDiagnostics | undefined;
+  isHealthLoading: boolean;
+  areRunsLoading: boolean;
+  selectedCompanyId: string | null;
+}): string {
+  if (isHealthLoading || areRunsLoading) {
+    return "Loading live diagnostics where available.";
+  }
+
+  if (!diagnostics) {
+    return "Live diagnostics are not available yet, so Paperclip is showing safe fallback states.";
+  }
+
+  if (!selectedCompanyId) {
+    return "Using live app health. Recent run diagnostics will appear after a company is selected.";
+  }
+
+  return "Using live app health and recent run diagnostics where available.";
+}
+
+export function SetupHealth() {
+  const { selectedCompanyId } = useCompany();
+  const [viewMode, setViewMode] = useState<ViewMode>("diagnostics");
+  const [selectedState, setSelectedState] = useState<MockStateId>("workspace_warning");
+  const [selectedActionMessage, setSelectedActionMessage] = useState<string | null>(null);
+  const [analyzePreviewOpen, setAnalyzePreviewOpen] = useState(false);
+
+  const { data: health, isLoading: isHealthLoading } = useQuery({
+    queryKey: queryKeys.health,
+    queryFn: () => healthApi.get(),
+  });
+
+  const { data: runs, isLoading: areRunsLoading } = useQuery({
+    queryKey: queryKeys.heartbeats(selectedCompanyId ?? "__none__"),
+    queryFn: () => heartbeatsApi.list(selectedCompanyId!, undefined, 10),
+    enabled: Boolean(selectedCompanyId),
+  });
+
+  const diagnostics = useMemo(
+    () => buildDiagnosticsFromSources({ health, latestRun: pickLatestRun(runs) }),
+    [health, runs],
+  );
+
+  const viewModel = useMemo(() => {
+    if (viewMode === "diagnostics") {
+      return buildSetupHealthViewModel(diagnostics);
+    }
+    return mockSetupHealthStates.find((state) => state.id === selectedState)?.viewModel
+      ?? mockSetupHealthStates[0].viewModel;
+  }, [diagnostics, selectedState, viewMode]);
+
+  const sourceNote = useMemo(() => {
+    if (viewMode === "mock") {
+      return "Previewing mock states with local scenario data only.";
+    }
+
+    return liveDiagnosticsNote({
+      diagnostics,
+      isHealthLoading,
+      areRunsLoading,
+      selectedCompanyId,
+    });
+  }, [areRunsLoading, diagnostics, isHealthLoading, selectedCompanyId, viewMode]);
+
+  const workspaceCard = useMemo(
+    () => viewModel.cards.find((card) => card.id === "workspace") ?? null,
+    [viewModel.cards],
+  );
+  const workspacePath = workspaceCard?.advancedDetails.find((detail) => detail.label === "Selected path")?.value ?? null;
+  const workspaceName = workspaceCard?.advancedDetails.find((detail) => detail.label === "Workspace")?.value ?? null;
+  const analyzeHelperCopy = useMemo(() => {
+    if (viewModel.primaryAction.disabled) {
+      return "Choose a workspace before starting.";
+    }
+    if (workspaceCard?.status === "warning") {
+      return "Workspace selected with a path warning. Read-only analysis can still continue.";
+    }
+    if (workspaceCard?.status === "ready") {
+      return "Workspace selected and ready for a read-only first analysis.";
+    }
+    if (workspaceCard?.status === "unknown") {
+      return "Workspace selected. Path health is still being confirmed.";
+    }
+    return null;
+  }, [viewModel.primaryAction.disabled, workspaceCard?.status]);
+  const analyzePreviewMessage = useMemo(() => {
+    if (workspaceCard?.status === "warning") {
+      return "Ready to analyze this workspace. This path has a warning, but read-only analysis can continue.";
+    }
+    return "Ready to analyze this workspace. The first analysis will be read-only and will not modify files.";
+  }, [workspaceCard?.status]);
+
+  function handleAction(label: string) {
+    if (label === "Analyze this workspace") {
+      if (viewModel.primaryAction.disabled) return;
+      setAnalyzePreviewOpen(true);
+      setSelectedActionMessage(null);
+      return;
+    }
+
+    if (label === "Open diagnostics") {
+      setAnalyzePreviewOpen(false);
+      setSelectedActionMessage("Open diagnostics action selected");
+      return;
+    }
+
+    if (label === "Continue to analysis setup") {
+      setAnalyzePreviewOpen(false);
+      setSelectedActionMessage("Continue to analysis setup selected");
+      return;
+    }
+
+    if (label === "Cancel") {
+      setAnalyzePreviewOpen(false);
+      setSelectedActionMessage("Analysis setup preview cancelled");
+      return;
+    }
+
+    setAnalyzePreviewOpen(false);
+    setSelectedActionMessage(`${label} action selected`);
+  }
+
+  return (
+    <div className="mx-auto flex max-w-6xl flex-col gap-6">
+      <div className="flex flex-col gap-2">
+        <h1 className="text-3xl font-semibold tracking-tight">Setup Health</h1>
+        <p className="max-w-3xl text-sm text-muted-foreground">
+          Check that Paperclip is ready to analyze your local workspace.
+        </p>
+      </div>
+
+      <Card className={cn("gap-5 py-5", overallToneClasses(viewModel.overallStatus))}>
+        <CardHeader className="gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <Badge variant="outline">{setupHealthOverallStatusLabel(viewModel.overallStatus)}</Badge>
+            <div className="text-xs text-muted-foreground">
+              {sourceNote}
+            </div>
+          </div>
+          <CardTitle>{viewModel.headline}</CardTitle>
+          <CardDescription>{viewModel.summary}</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-5">
+          <div className="flex flex-wrap gap-2">
+            <Button
+              onClick={() => handleAction(viewModel.primaryAction.label)}
+              disabled={viewModel.primaryAction.disabled === true}
+            >
+              {viewModel.primaryAction.label}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => handleAction(viewModel.secondaryAction.label)}
+            >
+              {viewModel.secondaryAction.label}
+            </Button>
+          </div>
+
+          {analyzeHelperCopy ? (
+            <div className="text-sm text-muted-foreground">
+              {analyzeHelperCopy}
+            </div>
+          ) : null}
+
+          {workspaceName && workspaceName !== "None" ? (
+            <div className="rounded-md border border-border/70 bg-background/70 px-3 py-2 text-sm text-muted-foreground">
+              <div><span className="font-medium text-foreground">Selected workspace:</span> {workspaceName}</div>
+              {workspacePath && workspacePath !== "None" ? (
+                <div className="mt-1 break-all font-mono text-xs">{workspacePath}</div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {analyzePreviewOpen ? (
+            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-4">
+              <div className="space-y-3">
+                <div>
+                  <div className="text-sm font-medium text-foreground">Analyze this workspace</div>
+                  <div className="mt-1 text-sm text-muted-foreground">{analyzePreviewMessage}</div>
+                </div>
+                <div className="space-y-1 text-sm text-muted-foreground">
+                  <div>Read-only first task</div>
+                  <div>No files will be changed</div>
+                  <div>No commands will run without approval</div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" onClick={() => handleAction("Continue to analysis setup")}>
+                    Continue to analysis setup
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => handleAction("Cancel")}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          <Separator />
+
+          <div className="flex flex-col gap-2">
+            <div className="text-sm font-medium">View mode</div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant={viewMode === "diagnostics" ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setViewMode("diagnostics");
+                  setSelectedActionMessage(null);
+                  setAnalyzePreviewOpen(false);
+                }}
+              >
+                Live diagnostics
+              </Button>
+              <Button
+                variant={viewMode === "mock" ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setViewMode("mock");
+                  setSelectedActionMessage(null);
+                  setAnalyzePreviewOpen(false);
+                }}
+              >
+                Mock states
+              </Button>
+            </div>
+          </div>
+
+          {viewMode === "mock" ? (
+            <div className="flex flex-col gap-2">
+              <div className="text-sm font-medium">Mock scenarios</div>
+              <div className="flex flex-wrap gap-2">
+                {mockSetupHealthStates.map((state) => (
+                  <Button
+                    key={state.id}
+                    variant={state.id === selectedState ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      setSelectedState(state.id);
+                      setSelectedActionMessage(null);
+                      setAnalyzePreviewOpen(false);
+                    }}
+                  >
+                    {state.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {selectedActionMessage ? (
+            <div
+              aria-live="polite"
+              className="rounded-md border border-border bg-background/80 px-3 py-2 text-sm text-muted-foreground"
+            >
+              {selectedActionMessage}
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        {viewModel.cards.map((card) => (
+          <div
+            key={card.id}
+            className={cn(card.id === "runtime" && "md:col-span-2")}
+          >
+            <SetupHealthCardView card={card} onAction={handleAction} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

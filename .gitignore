@@ -1,0 +1,43 @@
+.DS_Store
+.codex/
+.build
+/.swiftpm
+/dist
+/DerivedData
+/tmp
+__pycache__/
+*.pyc
+user_lab/phase3/benchmarks/*.json
+user_lab/phase3/profiles/*.json
+user_lab/phase4/benchmarks/*.json
+user_lab/phase4/handshake_runs/*.json
+user_lab/phase4/profiles/*.json
+user_lab/phase4/prototype_runs/*.json
+user_lab/phase4/status/*.json
+user_lab/phase4/validation/*.json
+
+# Build artifacts
+dist/
+.build/
+DerivedData/
+node_modules/
+
+# Local agent/runtime state
+.codex/
+
+# OS/editor/cache
+.DS_Store
+__pycache__/
+*.pyc
+
+# User lab generated run artifacts
+user_lab/**/benchmarks/*.json
+user_lab/**/profiles/*.json
+user_lab/**/prototype_runs/*.json
+user_lab/**/handshake_runs/*.json
+user_lab/**/candidate_runs/*.json
+user_lab/**/validation/*.json
+user_lab/**/status/*.json
+
+# Timestamped generated reports
+user_lab/**/reports/*_20*.md
