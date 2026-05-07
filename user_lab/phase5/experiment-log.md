@@ -57,3 +57,9 @@ Change: Audited Git/GitHub state, reviewed `user_lab` artifact hygiene, added lo
 Expected effect: Make the repo easier to commit cleanly and give the `Analyze this workspace` journey a clear non-executing request, safety, result, prompt, and copy contract.
 Observed result: The repo is confirmed to be pre-initial-commit with no remote, noisy generated JSON is now ignored, and the first safe-task design is documented end-to-end without enabling execution.
 Next action: Run file-presence validation and recommend Phase 5G for request-construction and preview-payload UI work.
+
+Time: 2026-05-07T22:15:00+0200
+Change: Added frontend-only request construction, request validation, and a setup-ready Analyze flow to Setup Health without enabling backend execution.
+Expected effect: Turn the first safe task from a static confirmation into a concrete, reviewable request flow while preserving strict read-only behavior.
+Observed result: Setup Health can now build and validate `AnalyzeWorkspaceRequest`, show a ready-to-run panel, surface safety guarantees, and keep execution fully disabled.
+Next action: Validate file presence, confirm the focused UI suite stays green, and recommend Phase 5H for the non-executing handoff boundary to future first-analysis execution.

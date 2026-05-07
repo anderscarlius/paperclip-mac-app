@@ -6,8 +6,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SetupHealth } from "./SetupHealth";
 import {
+  buildAnalyzeWorkspaceRequest,
+  buildAnalyzeWorkspaceSetupState,
   buildSetupHealthViewModel,
   classifyWorkspacePathForSetupHealth,
+  validateAnalyzeWorkspaceRequest,
 } from "@/lib/setup-health";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -146,6 +149,97 @@ describe("SetupHealth", () => {
     expect(viewModel.primaryAction.disabled).toBeFalsy();
   });
 
+  it("returns null from buildAnalyzeWorkspaceRequest without a workspace", () => {
+    const request = buildAnalyzeWorkspaceRequest({});
+
+    expect(request).toBeNull();
+  });
+
+  it("builds a valid analyze-workspace request for a selected workspace", () => {
+    const request = buildAnalyzeWorkspaceRequest({
+      workspace: {
+        selected: true,
+        path: "/Users/example/Projects/paperclip-app",
+        displayName: "paperclip-app",
+        pathHealth: classifyWorkspacePathForSetupHealth("/Users/example/Projects/paperclip-app"),
+      },
+    });
+
+    expect(request).not.toBeNull();
+    expect(request?.requestType).toBe("analyze_workspace");
+    expect(request?.workspace.selected).toBe(true);
+    expect(request?.workspace.path).toBe("/Users/example/Projects/paperclip-app");
+  });
+
+  it("buildAnalyzeWorkspaceRequest uses strict safety flags", () => {
+    const request = buildAnalyzeWorkspaceRequest({
+      workspace: {
+        selected: true,
+        path: "/Users/example/Projects/paperclip-app",
+      },
+    });
+
+    expect(request?.safety.readOnly).toBe(true);
+    expect(request?.safety.allowFileWrites).toBe(false);
+    expect(request?.safety.allowCommandExecution).toBe(false);
+    expect(request?.safety.allowNetworkAccess).toBe(false);
+  });
+
+  it("keeps local fallback and automatic routing disabled in the request", () => {
+    const request = buildAnalyzeWorkspaceRequest({
+      workspace: {
+        selected: true,
+        path: "/Users/example/Projects/paperclip-app",
+      },
+    });
+
+    expect(request?.runtimePreference.allowLocalFallback).toBe(false);
+    expect(request?.runtimePreference.allowAutomaticRouting).toBe(false);
+  });
+
+  it("allows request construction for a warning workspace path", () => {
+    const request = buildAnalyzeWorkspaceRequest({
+      workspace: {
+        selected: true,
+        path: "/Users/example/Cafe\u0301",
+        pathHealth: classifyWorkspacePathForSetupHealth("/Users/example/Cafe\u0301"),
+      },
+    });
+
+    expect(request).not.toBeNull();
+    expect(request?.workspace.pathHealth?.risk).toBe("medium");
+  });
+
+  it("validation rejects a null request", () => {
+    const validation = validateAnalyzeWorkspaceRequest(null);
+
+    expect(validation.ok).toBe(false);
+  });
+
+  it("validation rejects an unsafe mutated request", () => {
+    const request = buildAnalyzeWorkspaceRequest({
+      workspace: {
+        selected: true,
+        path: "/Users/example/Projects/paperclip-app",
+      },
+    });
+
+    const mutatedRequest = request ? {
+      ...request,
+      safety: {
+        ...request.safety,
+        allowCommandExecution: true as false,
+      },
+    } : null;
+
+    const validation = validateAnalyzeWorkspaceRequest(mutatedRequest);
+
+    expect(validation.ok).toBe(false);
+    if (!validation.ok) {
+      expect(validation.errors.some((error) => error.includes("allowCommandExecution"))).toBe(true);
+    }
+  });
+
   it("renders developer tools partial copy for missing tools", () => {
     const viewModel = buildSetupHealthViewModel({
       developerTools: {
@@ -224,6 +318,20 @@ describe("SetupHealth", () => {
     expect(pathHealth.containsSpaces).toBe(true);
   });
 
+  it("builds a setup-ready state for a selected workspace", () => {
+    const setupState = buildAnalyzeWorkspaceSetupState({
+      workspace: {
+        selected: true,
+        path: "/Users/example/Projects/paperclip-app",
+        displayName: "paperclip-app",
+        pathHealth: classifyWorkspacePathForSetupHealth("/Users/example/Projects/paperclip-app"),
+      },
+    });
+
+    expect(setupState.canContinue).toBe(true);
+    expect(setupState.title).toBe("Ready to run read-only analysis");
+  });
+
   it("renders the page with five cards in diagnostics mode", async () => {
     const root = renderSetupHealth(container);
 
@@ -279,6 +387,87 @@ describe("SetupHealth", () => {
     expect(container.textContent).toContain("Ready to analyze this workspace. The first analysis will be read-only and will not modify files.");
     expect(container.textContent).toContain("No files will be changed");
     expect(container.textContent).toContain("No commands will run without approval");
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("shows a ready-to-run panel after Continue is clicked", async () => {
+    const root = renderSetupHealth(container);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const mockModeButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Mock states");
+    act(() => {
+      mockModeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const readyButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Ready");
+    act(() => {
+      readyButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const analyzeButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Analyze this workspace");
+    act(() => {
+      analyzeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const continueButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Continue");
+    expect(continueButton).not.toBeUndefined();
+
+    act(() => {
+      continueButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain("Ready to run read-only analysis");
+    expect(container.textContent).toContain("Analysis has not started yet.");
+    expect(container.textContent).toContain("No files will be changed.");
+    expect(container.textContent).toContain("No commands will run without your approval.");
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("shows the path warning in the ready-to-run panel for medium-risk workspaces", async () => {
+    const root = renderSetupHealth(container);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const mockModeButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Mock states");
+    act(() => {
+      mockModeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const warningButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Workspace warning");
+    act(() => {
+      warningButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const analyzeButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Analyze this workspace");
+    act(() => {
+      analyzeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const continueButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Continue");
+    act(() => {
+      continueButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain("This workspace path has a warning. Analysis can continue, but some cloud runs may be slower.");
 
     act(() => {
       root.unmount();

@@ -23,10 +23,12 @@ import { useCompany } from "@/context/CompanyContext";
 import { readLocalFallbackCandidateSignal } from "@/lib/local-fallback-offer";
 import { queryKeys } from "@/lib/queryKeys";
 import {
+  buildAnalyzeWorkspaceSetupState,
   buildSetupHealthViewModel,
   mockSetupHealthStates,
   setupHealthOverallStatusLabel,
   setupHealthStatusLabel,
+  type AnalyzeWorkspaceSetupState,
   type SetupHealthCard,
   type SetupHealthDiagnostics,
   type SetupHealthSeverity,
@@ -35,6 +37,7 @@ import { cn } from "@/lib/utils";
 
 type MockStateId = (typeof mockSetupHealthStates)[number]["id"];
 type ViewMode = "diagnostics" | "mock";
+type AnalyzeFlowState = "closed" | "confirm" | "ready";
 
 function severityBadgeVariant(severity: SetupHealthSeverity): "default" | "secondary" | "outline" | "destructive" {
   switch (severity) {
@@ -329,7 +332,7 @@ export function SetupHealth() {
   const [viewMode, setViewMode] = useState<ViewMode>("diagnostics");
   const [selectedState, setSelectedState] = useState<MockStateId>("workspace_warning");
   const [selectedActionMessage, setSelectedActionMessage] = useState<string | null>(null);
-  const [analyzePreviewOpen, setAnalyzePreviewOpen] = useState(false);
+  const [analyzeFlowState, setAnalyzeFlowState] = useState<AnalyzeFlowState>("closed");
 
   const { data: health, isLoading: isHealthLoading } = useQuery({
     queryKey: queryKeys.health,
@@ -346,14 +349,22 @@ export function SetupHealth() {
     () => buildDiagnosticsFromSources({ health, latestRun: pickLatestRun(runs) }),
     [health, runs],
   );
+  const activeMockState = useMemo(
+    () => mockSetupHealthStates.find((state) => state.id === selectedState) ?? mockSetupHealthStates[0],
+    [selectedState],
+  );
+  const displayedDiagnostics = viewMode === "diagnostics" ? (diagnostics ?? {}) : activeMockState.diagnostics;
 
   const viewModel = useMemo(() => {
     if (viewMode === "diagnostics") {
       return buildSetupHealthViewModel(diagnostics);
     }
-    return mockSetupHealthStates.find((state) => state.id === selectedState)?.viewModel
-      ?? mockSetupHealthStates[0].viewModel;
-  }, [diagnostics, selectedState, viewMode]);
+    return activeMockState.viewModel;
+  }, [activeMockState, diagnostics, viewMode]);
+  const analyzeSetupState = useMemo<AnalyzeWorkspaceSetupState>(
+    () => buildAnalyzeWorkspaceSetupState(displayedDiagnostics),
+    [displayedDiagnostics],
+  );
 
   const sourceNote = useMemo(() => {
     if (viewMode === "mock") {
@@ -399,30 +410,36 @@ export function SetupHealth() {
   function handleAction(label: string) {
     if (label === "Analyze this workspace") {
       if (viewModel.primaryAction.disabled) return;
-      setAnalyzePreviewOpen(true);
+      setAnalyzeFlowState("confirm");
       setSelectedActionMessage(null);
       return;
     }
 
     if (label === "Open diagnostics") {
-      setAnalyzePreviewOpen(false);
+      setAnalyzeFlowState("closed");
       setSelectedActionMessage("Open diagnostics action selected");
       return;
     }
 
-    if (label === "Continue to analysis setup") {
-      setAnalyzePreviewOpen(false);
-      setSelectedActionMessage("Continue to analysis setup selected");
+    if (label === "Continue") {
+      setAnalyzeFlowState("ready");
+      setSelectedActionMessage(null);
+      return;
+    }
+
+    if (label === "Back") {
+      setAnalyzeFlowState("confirm");
+      setSelectedActionMessage(null);
       return;
     }
 
     if (label === "Cancel") {
-      setAnalyzePreviewOpen(false);
+      setAnalyzeFlowState("closed");
       setSelectedActionMessage("Analysis setup preview cancelled");
       return;
     }
 
-    setAnalyzePreviewOpen(false);
+    setAnalyzeFlowState("closed");
     setSelectedActionMessage(`${label} action selected`);
   }
 
@@ -477,7 +494,7 @@ export function SetupHealth() {
             </div>
           ) : null}
 
-          {analyzePreviewOpen ? (
+          {analyzeFlowState === "confirm" ? (
             <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-4">
               <div className="space-y-3">
                 <div>
@@ -490,8 +507,95 @@ export function SetupHealth() {
                   <div>No commands will run without approval</div>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Button size="sm" onClick={() => handleAction("Continue to analysis setup")}>
-                    Continue to analysis setup
+                  <Button size="sm" onClick={() => handleAction("Continue")}>
+                    Continue
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => handleAction("Cancel")}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {analyzeFlowState === "ready" ? (
+            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-4">
+              <div className="space-y-4">
+                <div>
+                  <div className="text-sm font-medium text-foreground">{analyzeSetupState.title}</div>
+                  <div className="mt-1 text-sm text-muted-foreground">{analyzeSetupState.summary}</div>
+                </div>
+
+                <div className="rounded-md border border-border/70 bg-background/80 px-3 py-3 text-sm text-muted-foreground">
+                  <div className="font-medium text-foreground">Analysis has not started yet.</div>
+                  <div className="mt-1">This setup request is read-only.</div>
+                  <div>No files will be changed.</div>
+                  <div>No commands will run without your approval.</div>
+                </div>
+
+                {workspaceName && workspaceName !== "None" ? (
+                  <div className="rounded-md border border-border/70 bg-background/70 px-3 py-3 text-sm text-muted-foreground">
+                    <div><span className="font-medium text-foreground">Workspace:</span> {workspaceName}</div>
+                    {workspacePath && workspacePath !== "None" ? (
+                      <div className="mt-1 break-all font-mono text-xs">{workspacePath}</div>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                <div className="space-y-1 text-sm text-muted-foreground">
+                  {analyzeSetupState.safetyBullets.map((bullet) => (
+                    <div key={bullet}>{bullet}</div>
+                  ))}
+                </div>
+
+                {analyzeSetupState.warnings.length > 0 ? (
+                  <div className="space-y-2">
+                    {analyzeSetupState.warnings.map((warning) => (
+                      <div
+                        key={warning}
+                        className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-muted-foreground"
+                      >
+                        {warning}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                <div className="rounded-md border border-border/70 bg-background/70 px-3 py-3 text-sm text-muted-foreground">
+                  <div className="font-medium text-foreground">
+                    Validation status: {analyzeSetupState.validation.ok ? "Request is valid" : "Request needs fixes"}
+                  </div>
+                  {!analyzeSetupState.validation.ok ? (
+                    <div className="mt-2 space-y-1">
+                      {analyzeSetupState.validation.errors.map((error) => (
+                        <div key={error}>{error}</div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+
+                <Collapsible>
+                  <div className="flex flex-col gap-3">
+                    <CollapsibleTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="justify-start px-0 text-muted-foreground hover:text-foreground"
+                      >
+                        Request preview
+                      </Button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <pre className="overflow-x-auto rounded-md border border-border/70 bg-background/80 p-3 text-xs text-muted-foreground">
+                        {JSON.stringify(analyzeSetupState.request, null, 2)}
+                      </pre>
+                    </CollapsibleContent>
+                  </div>
+                </Collapsible>
+
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" variant="outline" onClick={() => handleAction("Back")}>
+                    Back
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => handleAction("Cancel")}>
                     Cancel
@@ -512,7 +616,7 @@ export function SetupHealth() {
                 onClick={() => {
                   setViewMode("diagnostics");
                   setSelectedActionMessage(null);
-                  setAnalyzePreviewOpen(false);
+                  setAnalyzeFlowState("closed");
                 }}
               >
                 Live diagnostics
@@ -523,7 +627,7 @@ export function SetupHealth() {
                 onClick={() => {
                   setViewMode("mock");
                   setSelectedActionMessage(null);
-                  setAnalyzePreviewOpen(false);
+                  setAnalyzeFlowState("closed");
                 }}
               >
                 Mock states
@@ -543,7 +647,7 @@ export function SetupHealth() {
                     onClick={() => {
                       setSelectedState(state.id);
                       setSelectedActionMessage(null);
-                      setAnalyzePreviewOpen(false);
+                      setAnalyzeFlowState("closed");
                     }}
                   >
                     {state.label}

@@ -74,6 +74,49 @@ export type SetupHealthWorkspaceDiagnostics = {
   pathHealth?: WorkspacePathHealth | null;
 };
 
+export type AnalyzeWorkspacePathHealth = WorkspacePathHealth;
+
+export type AnalyzeWorkspaceRequest = {
+  schemaVersion: 1;
+  requestType: "analyze_workspace";
+  workspace: {
+    selected: true;
+    path: string;
+    displayName?: string | null;
+    pathHealth?: AnalyzeWorkspacePathHealth | null;
+  };
+  safety: {
+    readOnly: true;
+    allowFileWrites: false;
+    allowCommandExecution: false;
+    allowNetworkAccess: false;
+    requireUserApprovalForCommands: true;
+  };
+  runtimePreference: {
+    preferredMode: "cloud" | "local" | "auto";
+    allowLocalFallback: false;
+    allowAutomaticRouting: false;
+  };
+  userIntent: {
+    goal: "understand_workspace";
+    firstRun: boolean;
+  };
+};
+
+export type AnalyzeWorkspaceValidationResult =
+  | { ok: true }
+  | { ok: false; errors: string[] };
+
+export type AnalyzeWorkspaceSetupState = {
+  request: AnalyzeWorkspaceRequest | null;
+  validation: AnalyzeWorkspaceValidationResult;
+  canContinue: boolean;
+  title: string;
+  summary: string;
+  safetyBullets: string[];
+  warnings: string[];
+};
+
 export type SetupHealthDiagnostics = {
   cloudAi?: {
     authStatus?: "connected" | "missing" | "unknown";
@@ -274,6 +317,138 @@ function resolveWorkspacePathHealth(
   }
 
   return workspace.pathHealth ?? classifyWorkspacePathForSetupHealth(workspace.path);
+}
+
+export function buildAnalyzeWorkspaceRequest(
+  diagnostics: SetupHealthDiagnostics,
+): AnalyzeWorkspaceRequest | null {
+  const workspace = diagnostics.workspace;
+  if (!workspace?.selected) return null;
+
+  const path = workspace.path?.trim();
+  if (!path) return null;
+
+  return {
+    schemaVersion: 1,
+    requestType: "analyze_workspace",
+    workspace: {
+      selected: true,
+      path,
+      displayName: workspace.displayName ?? null,
+      pathHealth: workspace.pathHealth ?? classifyWorkspacePathForSetupHealth(path),
+    },
+    safety: {
+      readOnly: true,
+      allowFileWrites: false,
+      allowCommandExecution: false,
+      allowNetworkAccess: false,
+      requireUserApprovalForCommands: true,
+    },
+    runtimePreference: {
+      preferredMode: "cloud",
+      allowLocalFallback: false,
+      allowAutomaticRouting: false,
+    },
+    userIntent: {
+      goal: "understand_workspace",
+      firstRun: true,
+    },
+  };
+}
+
+export function validateAnalyzeWorkspaceRequest(
+  request: AnalyzeWorkspaceRequest | null,
+): AnalyzeWorkspaceValidationResult {
+  const errors: string[] = [];
+
+  if (!request) {
+    return { ok: false, errors: ["No analyze-workspace request could be created."] };
+  }
+
+  if (request.schemaVersion !== 1) errors.push("schemaVersion must be 1.");
+  if (request.requestType !== "analyze_workspace") errors.push('requestType must be "analyze_workspace".');
+  if (request.workspace.selected !== true) errors.push("workspace.selected must be true.");
+  if (request.workspace.path.trim().length === 0) errors.push("workspace.path must be a non-empty string.");
+  if (request.safety.readOnly !== true) errors.push("safety.readOnly must be true.");
+  if (request.safety.allowFileWrites !== false) errors.push("safety.allowFileWrites must be false.");
+  if (request.safety.allowCommandExecution !== false) errors.push("safety.allowCommandExecution must be false.");
+  if (request.safety.allowNetworkAccess !== false) errors.push("safety.allowNetworkAccess must be false.");
+  if (request.safety.requireUserApprovalForCommands !== true) {
+    errors.push("safety.requireUserApprovalForCommands must be true.");
+  }
+  if (request.runtimePreference.allowLocalFallback !== false) {
+    errors.push("runtimePreference.allowLocalFallback must be false.");
+  }
+  if (request.runtimePreference.allowAutomaticRouting !== false) {
+    errors.push("runtimePreference.allowAutomaticRouting must be false.");
+  }
+  if (request.userIntent.goal !== "understand_workspace") {
+    errors.push('userIntent.goal must be "understand_workspace".');
+  }
+
+  return errors.length > 0 ? { ok: false, errors } : { ok: true };
+}
+
+export function buildAnalyzeWorkspaceSetupState(
+  diagnostics: SetupHealthDiagnostics,
+): AnalyzeWorkspaceSetupState {
+  const request = buildAnalyzeWorkspaceRequest(diagnostics);
+  const validation = validateAnalyzeWorkspaceRequest(request);
+  const workspace = diagnostics.workspace;
+  const pathHealth = request?.workspace.pathHealth
+    ?? (workspace?.selected ? resolveWorkspacePathHealth(workspace) : null);
+  const warnings: string[] = [];
+
+  if (!workspace?.selected || !request) {
+    return {
+      request,
+      validation,
+      canContinue: false,
+      title: "Choose a workspace first",
+      summary: "Select a local folder before starting the first analysis.",
+      safetyBullets: [
+        "Read-only first run",
+        "No file changes",
+        "No commands without approval",
+        "No local fallback for this first analysis",
+      ],
+      warnings,
+    };
+  }
+
+  if (pathHealth?.risk === "medium") {
+    warnings.push("This workspace path has a warning. Analysis can continue, but some cloud runs may be slower.");
+  }
+  if (diagnostics.cloudAi?.authStatus === "missing") {
+    warnings.push("Cloud AI is not connected. Connect Cloud AI before running the first analysis, or continue later when a local analysis mode is available.");
+  }
+  if (diagnostics.developerTools?.pathIssueDetected !== true) {
+    const developerToolsCardLikePartial =
+      diagnostics.developerTools
+      && [diagnostics.developerTools.gitAvailable, diagnostics.developerTools.nodeAvailable, diagnostics.developerTools.pnpmAvailable, diagnostics.developerTools.swiftAvailable]
+        .some((value) => value === false);
+    if (developerToolsCardLikePartial) {
+      warnings.push("Some developer tools are missing, but the first read-only analysis can still start.");
+    }
+  }
+  if (diagnostics.localAi?.status === "available" || diagnostics.localAi?.status === "available_candidate") {
+    warnings.push("Local AI is not used for the first analysis yet.");
+  }
+
+  return {
+    request,
+    validation,
+    canContinue: validation.ok,
+    title: "Ready to run read-only analysis",
+    summary: "Paperclip can prepare a first read-only analysis request for this workspace.",
+    safetyBullets: [
+      "Read-only first run",
+      "No file changes",
+      "No commands without approval",
+      "No local fallback for this first analysis",
+    ],
+    warnings,
+  };
 }
 
 function buildCloudAiCard(cloudAi: SetupHealthDiagnostics["cloudAi"]): SetupHealthCard {
@@ -658,7 +833,7 @@ export function setupHealthOverallStatusLabel(status: SetupHealthViewModel["over
   }
 }
 
-export const mockSetupHealthReady: SetupHealthViewModel = buildSetupHealthViewModel({
+export const mockSetupHealthReadyDiagnostics: SetupHealthDiagnostics = {
   cloudAi: {
     authStatus: "connected",
     provider: "OpenAI",
@@ -697,9 +872,11 @@ export const mockSetupHealthReady: SetupHealthViewModel = buildSetupHealthViewMo
     warnings: [],
     diagnosticsAvailable: true,
   },
-});
+};
 
-export const mockSetupHealthNeedsAttention: SetupHealthViewModel = buildSetupHealthViewModel({
+export const mockSetupHealthReady: SetupHealthViewModel = buildSetupHealthViewModel(mockSetupHealthReadyDiagnostics);
+
+export const mockSetupHealthNeedsAttentionDiagnostics: SetupHealthDiagnostics = {
   cloudAi: {
     authStatus: "missing",
     modelHosting: "unknown",
@@ -723,9 +900,11 @@ export const mockSetupHealthNeedsAttention: SetupHealthViewModel = buildSetupHea
     warnings: [],
     diagnosticsAvailable: true,
   },
-});
+};
 
-export const mockSetupHealthWorkspaceWarning: SetupHealthViewModel = buildSetupHealthViewModel({
+export const mockSetupHealthNeedsAttention: SetupHealthViewModel = buildSetupHealthViewModel(mockSetupHealthNeedsAttentionDiagnostics);
+
+export const mockSetupHealthWorkspaceWarningDiagnostics: SetupHealthDiagnostics = {
   cloudAi: {
     authStatus: "connected",
     provider: "OpenAI",
@@ -747,9 +926,9 @@ export const mockSetupHealthWorkspaceWarning: SetupHealthViewModel = buildSetupH
   },
   workspace: {
     selected: true,
-    displayName: "Paperclip App",
-    path: "/Users/example/Paperclip App",
-    pathHealth: classifyWorkspacePathForSetupHealth("/Users/example/Paperclip App"),
+    displayName: "Café",
+    path: "/Users/example/Cafe\u0301",
+    pathHealth: classifyWorkspacePathForSetupHealth("/Users/example/Cafe\u0301"),
   },
   developerTools: {
     gitAvailable: true,
@@ -769,10 +948,29 @@ export const mockSetupHealthWorkspaceWarning: SetupHealthViewModel = buildSetupH
     ],
     diagnosticsAvailable: true,
   },
-});
+};
+
+export const mockSetupHealthWorkspaceWarning: SetupHealthViewModel = buildSetupHealthViewModel(
+  mockSetupHealthWorkspaceWarningDiagnostics,
+);
 
 export const mockSetupHealthStates = [
-  { id: "needs_attention", label: "Needs attention", viewModel: mockSetupHealthNeedsAttention },
-  { id: "workspace_warning", label: "Workspace warning", viewModel: mockSetupHealthWorkspaceWarning },
-  { id: "ready", label: "Ready", viewModel: mockSetupHealthReady },
+  {
+    id: "needs_attention",
+    label: "Needs attention",
+    diagnostics: mockSetupHealthNeedsAttentionDiagnostics,
+    viewModel: mockSetupHealthNeedsAttention,
+  },
+  {
+    id: "workspace_warning",
+    label: "Workspace warning",
+    diagnostics: mockSetupHealthWorkspaceWarningDiagnostics,
+    viewModel: mockSetupHealthWorkspaceWarning,
+  },
+  {
+    id: "ready",
+    label: "Ready",
+    diagnostics: mockSetupHealthReadyDiagnostics,
+    viewModel: mockSetupHealthReady,
+  },
 ] as const;
