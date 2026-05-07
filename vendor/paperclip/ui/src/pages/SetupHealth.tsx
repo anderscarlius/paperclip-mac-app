@@ -23,11 +23,13 @@ import { useCompany } from "@/context/CompanyContext";
 import { readLocalFallbackCandidateSignal } from "@/lib/local-fallback-offer";
 import { queryKeys } from "@/lib/queryKeys";
 import {
+  prepareAnalyzeWorkspaceHandoff,
   buildAnalyzeWorkspaceSetupState,
   buildSetupHealthViewModel,
   mockSetupHealthStates,
   setupHealthOverallStatusLabel,
   setupHealthStatusLabel,
+  type AnalyzeWorkspaceHandoffResult,
   type AnalyzeWorkspaceSetupState,
   type SetupHealthCard,
   type SetupHealthDiagnostics,
@@ -37,7 +39,7 @@ import { cn } from "@/lib/utils";
 
 type MockStateId = (typeof mockSetupHealthStates)[number]["id"];
 type ViewMode = "diagnostics" | "mock";
-type AnalyzeFlowState = "closed" | "confirm" | "ready";
+type AnalyzeFlowState = "closed" | "confirm" | "ready" | "prepared";
 
 function severityBadgeVariant(severity: SetupHealthSeverity): "default" | "secondary" | "outline" | "destructive" {
   switch (severity) {
@@ -365,6 +367,10 @@ export function SetupHealth() {
     () => buildAnalyzeWorkspaceSetupState(displayedDiagnostics),
     [displayedDiagnostics],
   );
+  const analyzeHandoffResult = useMemo<AnalyzeWorkspaceHandoffResult>(
+    () => prepareAnalyzeWorkspaceHandoff(analyzeSetupState.request),
+    [analyzeSetupState.request],
+  );
 
   const sourceNote = useMemo(() => {
     if (viewMode === "mock") {
@@ -428,7 +434,7 @@ export function SetupHealth() {
     }
 
     if (label === "Back") {
-      setAnalyzeFlowState("confirm");
+      setAnalyzeFlowState((currentState) => (currentState === "prepared" ? "ready" : "confirm"));
       setSelectedActionMessage(null);
       return;
     }
@@ -436,6 +442,12 @@ export function SetupHealth() {
     if (label === "Cancel") {
       setAnalyzeFlowState("closed");
       setSelectedActionMessage("Analysis setup preview cancelled");
+      return;
+    }
+
+    if (label === "Prepare request") {
+      setAnalyzeFlowState("prepared");
+      setSelectedActionMessage(null);
       return;
     }
 
@@ -588,6 +600,85 @@ export function SetupHealth() {
                     <CollapsibleContent>
                       <pre className="overflow-x-auto rounded-md border border-border/70 bg-background/80 p-3 text-xs text-muted-foreground">
                         {JSON.stringify(analyzeSetupState.request, null, 2)}
+                      </pre>
+                    </CollapsibleContent>
+                  </div>
+                </Collapsible>
+
+                <div className="flex flex-wrap gap-2">
+                  {analyzeSetupState.canContinue ? (
+                    <Button size="sm" onClick={() => handleAction("Prepare request")}>
+                      Prepare request
+                    </Button>
+                  ) : null}
+                  <Button size="sm" variant="outline" onClick={() => handleAction("Back")}>
+                    Back
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => handleAction("Cancel")}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {analyzeFlowState === "prepared" ? (
+            <div className="rounded-lg border border-sky-500/30 bg-sky-500/5 px-4 py-4">
+              <div className="space-y-4">
+                <div>
+                  <div className="text-sm font-medium text-foreground">Analysis request prepared</div>
+                  <div className="mt-1 text-sm text-muted-foreground">
+                    {analyzeHandoffResult.next.message}
+                  </div>
+                </div>
+
+                <div className="rounded-md border border-border/70 bg-background/80 px-3 py-3 text-sm text-muted-foreground">
+                  <div className="font-medium text-foreground">Execution has not started.</div>
+                  <div className="mt-1">No agent has been started.</div>
+                  <div>No files have been read or changed.</div>
+                  <div>No commands have been run.</div>
+                  <div className="mt-2">The next implementation phase will add safe metadata collection.</div>
+                </div>
+
+                {workspaceName && workspaceName !== "None" ? (
+                  <div className="rounded-md border border-border/70 bg-background/70 px-3 py-3 text-sm text-muted-foreground">
+                    <div><span className="font-medium text-foreground">Workspace:</span> {workspaceName}</div>
+                    {workspacePath && workspacePath !== "None" ? (
+                      <div className="mt-1 break-all font-mono text-xs">{workspacePath}</div>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                <div className="rounded-md border border-border/70 bg-background/70 px-3 py-3 text-sm text-muted-foreground">
+                  <div className="font-medium text-foreground">
+                    Handoff status: {analyzeHandoffResult.accepted ? "Accepted" : "Not accepted"}
+                  </div>
+                  <div className="mt-1">
+                    Validation: {analyzeHandoffResult.validation.ok ? "OK" : "Needs fixes"}
+                  </div>
+                  {!analyzeHandoffResult.validation.ok ? (
+                    <div className="mt-2 space-y-1">
+                      {analyzeHandoffResult.validation.errors.map((error) => (
+                        <div key={error}>{error}</div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+
+                <Collapsible>
+                  <div className="flex flex-col gap-3">
+                    <CollapsibleTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="justify-start px-0 text-muted-foreground hover:text-foreground"
+                      >
+                        Handoff preview
+                      </Button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <pre className="overflow-x-auto rounded-md border border-border/70 bg-background/80 p-3 text-xs text-muted-foreground">
+                        {JSON.stringify(analyzeHandoffResult, null, 2)}
                       </pre>
                     </CollapsibleContent>
                   </div>

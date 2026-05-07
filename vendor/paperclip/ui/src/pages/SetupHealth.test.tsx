@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SetupHealth } from "./SetupHealth";
 import {
   buildAnalyzeWorkspaceRequest,
+  prepareAnalyzeWorkspaceHandoff,
   buildAnalyzeWorkspaceSetupState,
   buildSetupHealthViewModel,
   classifyWorkspacePathForSetupHealth,
@@ -332,6 +333,55 @@ describe("SetupHealth", () => {
     expect(setupState.title).toBe("Ready to run read-only analysis");
   });
 
+  it("prepareAnalyzeWorkspaceHandoff accepts a valid request", () => {
+    const request = buildAnalyzeWorkspaceRequest({
+      workspace: {
+        selected: true,
+        path: "/Users/example/Projects/paperclip-app",
+        displayName: "paperclip-app",
+        pathHealth: classifyWorkspacePathForSetupHealth("/Users/example/Projects/paperclip-app"),
+      },
+    });
+
+    const handoff = prepareAnalyzeWorkspaceHandoff(request);
+
+    expect(handoff.accepted).toBe(true);
+    expect(handoff.validation.ok).toBe(true);
+  });
+
+  it("valid handoff always keeps all execution flags false", () => {
+    const request = buildAnalyzeWorkspaceRequest({
+      workspace: {
+        selected: true,
+        path: "/Users/example/Projects/paperclip-app",
+      },
+    });
+
+    const handoff = prepareAnalyzeWorkspaceHandoff(request);
+
+    expect(handoff.executionStarted).toBe(false);
+    expect(handoff.safety.agentStarted).toBe(false);
+    expect(handoff.safety.filesChanged).toBe(false);
+    expect(handoff.safety.commandsRun).toBe(false);
+    expect(handoff.safety.networkAccessed).toBe(false);
+    expect(handoff.safety.localFallbackUsed).toBe(false);
+    expect(handoff.safety.automaticRoutingUsed).toBe(false);
+  });
+
+  it("invalid requests are not accepted and still keep all execution flags false", () => {
+    const handoff = prepareAnalyzeWorkspaceHandoff(null);
+
+    expect(handoff.accepted).toBe(false);
+    expect(handoff.validation.ok).toBe(false);
+    expect(handoff.executionStarted).toBe(false);
+    expect(handoff.safety.agentStarted).toBe(false);
+    expect(handoff.safety.filesChanged).toBe(false);
+    expect(handoff.safety.commandsRun).toBe(false);
+    expect(handoff.safety.networkAccessed).toBe(false);
+    expect(handoff.safety.localFallbackUsed).toBe(false);
+    expect(handoff.safety.automaticRoutingUsed).toBe(false);
+  });
+
   it("renders the page with five cards in diagnostics mode", async () => {
     const root = renderSetupHealth(container);
 
@@ -468,6 +518,57 @@ describe("SetupHealth", () => {
     });
 
     expect(container.textContent).toContain("This workspace path has a warning. Analysis can continue, but some cloud runs may be slower.");
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("shows a prepared handoff state after Prepare request is clicked", async () => {
+    const root = renderSetupHealth(container);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const mockModeButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Mock states");
+    act(() => {
+      mockModeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const readyButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Ready");
+    act(() => {
+      readyButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const analyzeButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Analyze this workspace");
+    act(() => {
+      analyzeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const continueButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Continue");
+    act(() => {
+      continueButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const prepareButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Prepare request");
+    expect(prepareButton).not.toBeUndefined();
+
+    act(() => {
+      prepareButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain("Analysis request prepared");
+    expect(container.textContent).toContain("Execution has not started.");
+    expect(container.textContent).toContain("No agent has been started.");
+    expect(container.textContent).toContain("No files have been read or changed.");
+    expect(container.textContent).toContain("No commands have been run.");
+    expect(container.textContent).not.toContain("Project summary");
 
     act(() => {
       root.unmount();

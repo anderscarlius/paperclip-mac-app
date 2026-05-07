@@ -117,6 +117,39 @@ export type AnalyzeWorkspaceSetupState = {
   warnings: string[];
 };
 
+export type AnalyzeWorkspaceHandoffResult = {
+  schemaVersion: 1;
+  resultType: "analyze_workspace_handoff";
+  accepted: boolean;
+  executionStarted: false;
+  requestType: "analyze_workspace";
+  workspace: {
+    displayName?: string | null;
+    pathHealth?: {
+      risk: "none" | "low" | "medium" | "unknown";
+      reasons: string[];
+    } | null;
+  };
+  validation: {
+    ok: boolean;
+    errors: string[];
+  };
+  safety: {
+    readOnly: true;
+    filesChanged: false;
+    commandsRun: false;
+    networkAccessed: false;
+    agentStarted: false;
+    localFallbackUsed: false;
+    automaticRoutingUsed: false;
+  };
+  next: {
+    status: "not_wired_yet";
+    recommendedNextPhase: "5I";
+    message: string;
+  };
+};
+
 export type SetupHealthDiagnostics = {
   cloudAi?: {
     authStatus?: "connected" | "missing" | "unknown";
@@ -387,6 +420,56 @@ export function validateAnalyzeWorkspaceRequest(
   }
 
   return errors.length > 0 ? { ok: false, errors } : { ok: true };
+}
+
+export function prepareAnalyzeWorkspaceHandoff(
+  request: AnalyzeWorkspaceRequest | null,
+): AnalyzeWorkspaceHandoffResult {
+  const validation = validateAnalyzeWorkspaceRequest(request);
+  const accepted = validation.ok;
+  const pathHealth = request?.workspace.pathHealth ?? null;
+
+  return {
+    schemaVersion: 1,
+    resultType: "analyze_workspace_handoff",
+    accepted,
+    executionStarted: false,
+    requestType: "analyze_workspace",
+    workspace: {
+      displayName: request?.workspace.displayName ?? null,
+      pathHealth: pathHealth
+        ? {
+          risk: pathHealth.risk,
+          reasons: [...pathHealth.reasons],
+        }
+        : null,
+    },
+    validation: validation.ok
+      ? {
+        ok: true,
+        errors: [],
+      }
+      : {
+        ok: false,
+        errors: [...validation.errors],
+      },
+    safety: {
+      readOnly: true,
+      filesChanged: false,
+      commandsRun: false,
+      networkAccessed: false,
+      agentStarted: false,
+      localFallbackUsed: false,
+      automaticRoutingUsed: false,
+    },
+    next: {
+      status: "not_wired_yet",
+      recommendedNextPhase: "5I",
+      message: accepted
+        ? "Analyze Workspace request accepted for setup validation. Execution is not wired yet."
+        : "Analyze Workspace request was not accepted. Fix validation errors before execution is wired.",
+    },
+  };
 }
 
 export function buildAnalyzeWorkspaceSetupState(
