@@ -93,10 +93,12 @@ describe("SetupHealth", () => {
         topLevelEntries: [
           { name: "README.md", kind: "file" },
           { name: "package.json", kind: "file" },
+          { name: "pnpm-lock.yaml", kind: "file" },
         ],
         manifestIndicators: [
           { name: "README.md", present: true, category: "readme" },
           { name: "package.json", present: true, category: "javascript" },
+          { name: "pnpm-lock.yaml", present: true, category: "javascript" },
         ],
         limits: {
           maxTopLevelEntries: 50,
@@ -680,7 +682,16 @@ describe("SetupHealth", () => {
     expect(container.textContent).toContain("No file contents were read.");
     expect(container.textContent).toContain("No commands were run.");
     expect(container.textContent).toContain("No recursive scan was performed.");
-    expect(container.textContent).not.toContain("Project summary");
+    expect(container.textContent).toContain("First workspace summary");
+    expect(container.textContent).toContain("This is a metadata-only first result.");
+    expect(container.textContent).toContain("No AI was used for this result.");
+    expect(container.textContent).toContain("Project summary");
+    expect(container.textContent).toContain("Detected languages/tools");
+    expect(container.textContent).toContain("Swift");
+    expect(container.textContent).toContain("What I inspected");
+    expect(container.textContent).toContain("What I did not inspect");
+    expect(container.textContent).not.toContain("tests passed");
+    expect(container.textContent).not.toContain("security posture is verified");
 
     act(() => {
       root.unmount();

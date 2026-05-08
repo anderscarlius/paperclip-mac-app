@@ -24,6 +24,7 @@ import { useCompany } from "@/context/CompanyContext";
 import { readLocalFallbackCandidateSignal } from "@/lib/local-fallback-offer";
 import { queryKeys } from "@/lib/queryKeys";
 import {
+  buildAnalyzeWorkspaceResultFromMetadata,
   collectAnalyzeWorkspaceTopLevelMetadataFromProvidedEntries,
   prepareAnalyzeWorkspaceHandoff,
   buildAnalyzeWorkspaceSetupState,
@@ -33,10 +34,13 @@ import {
   setupHealthStatusLabel,
   type AnalyzeWorkspaceCollectionResult,
   type AnalyzeWorkspaceHandoffResult,
+  type AnalyzeWorkspaceResult,
+  type AnalyzeWorkspaceResultValidationResult,
   type AnalyzeWorkspaceSetupState,
   type SetupHealthCard,
   type SetupHealthDiagnostics,
   type SetupHealthSeverity,
+  validateAnalyzeWorkspaceResult,
 } from "@/lib/setup-health";
 import { cn } from "@/lib/utils";
 
@@ -397,6 +401,17 @@ export function SetupHealth() {
     () => prepareAnalyzeWorkspaceHandoff(analyzeSetupState.request),
     [analyzeSetupState.request],
   );
+  const firstWorkspaceResult = useMemo<AnalyzeWorkspaceResult | null>(() => {
+    if (!metadataCollectionResult?.ok || !analyzeSetupState.request) return null;
+    return buildAnalyzeWorkspaceResultFromMetadata({
+      request: analyzeSetupState.request,
+      snapshot: metadataCollectionResult.snapshot,
+    });
+  }, [analyzeSetupState.request, metadataCollectionResult]);
+  const firstWorkspaceResultValidation = useMemo<AnalyzeWorkspaceResultValidationResult | null>(() => {
+    if (!firstWorkspaceResult) return null;
+    return validateAnalyzeWorkspaceResult(firstWorkspaceResult);
+  }, [firstWorkspaceResult]);
 
   const sourceNote = useMemo(() => {
     if (viewMode === "mock") {
@@ -866,6 +881,123 @@ export function SetupHealth() {
                         )}
                       </div>
                     </div>
+
+                    {firstWorkspaceResult ? (
+                      <div className="rounded-md border border-sky-500/30 bg-sky-500/5 px-3 py-3 text-sm text-muted-foreground">
+                        <div className="font-medium text-foreground">First workspace summary</div>
+                        <div className="mt-1">
+                          {metadataPreviewSource === "example"
+                            ? "Example only"
+                            : "Based on limited read-only metadata"}
+                        </div>
+                        <div className="mt-2">This is a metadata-only first result.</div>
+                        <div>No file contents were read.</div>
+                        <div>No commands were run.</div>
+                        <div>No AI was used for this result.</div>
+
+                        <div className="mt-4 space-y-4">
+                          <div>
+                            <div className="font-medium text-foreground">Project summary</div>
+                            <div className="mt-1">{firstWorkspaceResult.summary.title}</div>
+                            <div className="mt-1">{firstWorkspaceResult.summary.description}</div>
+                            <div className="mt-1 text-xs">Confidence: {firstWorkspaceResult.summary.confidence}</div>
+                          </div>
+
+                          <div>
+                            <div className="font-medium text-foreground">Detected languages/tools</div>
+                            <div className="mt-1 space-y-1">
+                              <div>
+                                Languages: {firstWorkspaceResult.detected.languages.length > 0
+                                  ? firstWorkspaceResult.detected.languages.join(", ")
+                                  : "No language indicators detected."}
+                              </div>
+                              <div>
+                                Frameworks: {firstWorkspaceResult.detected.frameworks.length > 0
+                                  ? firstWorkspaceResult.detected.frameworks.join(", ")
+                                  : "No framework indicators detected."}
+                              </div>
+                              <div>
+                                Package managers: {firstWorkspaceResult.detected.packageManagers.length > 0
+                                  ? firstWorkspaceResult.detected.packageManagers.join(", ")
+                                  : "No package manager indicators detected."}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="font-medium text-foreground">Important files</div>
+                            <div className="mt-1 space-y-1">
+                              {firstWorkspaceResult.detected.importantFiles.length > 0 ? (
+                                firstWorkspaceResult.detected.importantFiles.map((file) => (
+                                  <div key={`${file.path}-${file.reason}`}>
+                                    {file.path} · {file.reason}
+                                  </div>
+                                ))
+                              ) : (
+                                <div>No important top-level files were identified yet.</div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="font-medium text-foreground">Setup warnings</div>
+                            <div className="mt-1 space-y-1">
+                              {firstWorkspaceResult.setupWarnings.map((warning) => (
+                                <div key={`${warning.title}-${warning.message}`}>
+                                  {warning.title} · {warning.message}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="font-medium text-foreground">Suggested next actions</div>
+                            <div className="mt-1 space-y-1">
+                              {firstWorkspaceResult.suggestedNextActions.map((action) => (
+                                <div key={`${action.label}-${action.description}`}>
+                                  {action.label} · {action.description}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="font-medium text-foreground">What I inspected</div>
+                            <div className="mt-1 space-y-1">
+                              <div>
+                                Top-level entries: {firstWorkspaceResult.inspected.filesListed.join(", ")}
+                              </div>
+                              <div>Files read: none</div>
+                              <div>Commands run: none</div>
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="font-medium text-foreground">What I did not inspect</div>
+                            <div className="mt-1 space-y-1">
+                              {firstWorkspaceResult.notInspected.map((item) => (
+                                <div key={item}>{item}</div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {firstWorkspaceResultValidation ? (
+                            <div className="rounded-md border border-border/70 bg-background/70 px-3 py-3">
+                              <div className="font-medium text-foreground">
+                                Result validation: {firstWorkspaceResultValidation.ok ? "OK" : "Needs fixes"}
+                              </div>
+                              {!firstWorkspaceResultValidation.ok ? (
+                                <div className="mt-2 space-y-1">
+                                  {firstWorkspaceResultValidation.errors.map((error) => (
+                                    <div key={error}>{error}</div>
+                                  ))}
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
                   </>
                 ) : (
                   <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-3 text-sm text-muted-foreground">

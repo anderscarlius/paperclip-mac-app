@@ -246,6 +246,69 @@ export type AnalyzeWorkspaceCollectionResult =
     warnings: string[];
   };
 
+export type AnalyzeWorkspaceResultConfidence = "high" | "medium" | "low";
+
+export type AnalyzeWorkspaceResult = {
+  schemaVersion: 1;
+  resultType: "analyze_workspace_result";
+  analysisMode: "metadata_only_rule_based";
+  aiUsed: false;
+  workspace: {
+    displayName?: string | null;
+    pathHealth?: {
+      risk: "none" | "low" | "medium" | "unknown";
+      reasons: string[];
+    } | null;
+  };
+  summary: {
+    title: string;
+    description: string;
+    confidence: AnalyzeWorkspaceResultConfidence;
+  };
+  detected: {
+    languages: string[];
+    frameworks: string[];
+    packageManagers: string[];
+    importantFiles: Array<{
+      path: string;
+      reason: string;
+    }>;
+  };
+  setupWarnings: Array<{
+    severity: "info" | "warning" | "needs_attention";
+    title: string;
+    message: string;
+    action?: string;
+  }>;
+  suggestedNextActions: Array<{
+    label: string;
+    description: string;
+    risk: "low" | "medium" | "high";
+    requiresApproval: boolean;
+  }>;
+  inspected: {
+    filesListed: string[];
+    filesRead: string[];
+    commandsRun: string[];
+  };
+  notInspected: string[];
+  safety: {
+    readOnly: true;
+    filesChanged: false;
+    commandsRun: false;
+    fileContentsRead: false;
+    recursiveScan: false;
+    aiUsed: false;
+    agentStarted: false;
+    localFallbackUsed: false;
+    automaticRoutingUsed: false;
+  };
+};
+
+export type AnalyzeWorkspaceResultValidationResult =
+  | { ok: true }
+  | { ok: false; errors: string[] };
+
 export type SetupHealthDiagnostics = {
   cloudAi?: {
     authStatus?: "connected" | "missing" | "unknown";
@@ -337,6 +400,62 @@ const MANIFEST_INDICATOR_CATEGORIES = new Map<string, AnalyzeWorkspaceManifestIn
   ["tests", "test"],
   ["docs", "docs"],
 ]);
+const IMPORTANT_FILE_REASONS = new Map<string, string>([
+  ["readme", "Project documentation entry point"],
+  ["readme.md", "Project documentation entry point"],
+  ["readme.txt", "Project documentation entry point"],
+  ["package.json", "JavaScript package manifest"],
+  ["pnpm-lock.yaml", "pnpm lockfile"],
+  ["package-lock.json", "npm lockfile"],
+  ["yarn.lock", "Yarn lockfile"],
+  ["bun.lockb", "Bun lockfile"],
+  ["package.swift", "Swift package manifest"],
+  ["pyproject.toml", "Python project manifest"],
+  ["requirements.txt", "Python dependency manifest"],
+  ["poetry.lock", "Poetry lockfile"],
+  ["cargo.toml", "Rust package manifest"],
+  ["cargo.lock", "Cargo lockfile"],
+  ["go.mod", "Go module definition"],
+  ["go.sum", "Go dependency checksum file"],
+  ["gemfile", "Ruby dependency manifest"],
+  ["gemfile.lock", "Bundler lockfile"],
+  ["composer.json", "PHP package manifest"],
+  ["composer.lock", "Composer lockfile"],
+  ["dockerfile", "Container build definition"],
+  ["docker-compose.yml", "Local service orchestration definition"],
+  ["src", "Source directory"],
+  ["sources", "Source directory"],
+  ["test", "Test directory"],
+  ["tests", "Test directory"],
+  ["docs", "Documentation directory"],
+]);
+const NEXT_CONFIG_NAMES = new Set(["next.config.js", "next.config.mjs", "next.config.ts"]);
+const VITE_CONFIG_NAMES = new Set(["vite.config.js", "vite.config.mjs", "vite.config.ts"]);
+const JS_PACKAGE_MANAGER_NAMES = new Map<string, string>([
+  ["pnpm-lock.yaml", "pnpm"],
+  ["package-lock.json", "npm"],
+  ["yarn.lock", "yarn"],
+  ["bun.lockb", "Bun"],
+]);
+const OTHER_PACKAGE_MANAGER_NAMES = new Map<string, string>([
+  ["poetry.lock", "Poetry"],
+  ["cargo.lock", "Cargo"],
+  ["go.mod", "Go modules"],
+  ["gemfile.lock", "Bundler"],
+  ["composer.lock", "Composer"],
+]);
+const NOT_INSPECTED_ITEMS = [
+  "File contents",
+  "Nested directories",
+  "Secrets and credentials",
+  ".git internals",
+  "node_modules",
+  "dist/build artifacts",
+  "Dependency health",
+  "Test results",
+  "Security posture",
+  "Runtime behavior",
+] as const;
 
 function compactDetails(
   details: Array<SetupHealthDetail | null>,
@@ -826,6 +945,323 @@ export function collectAnalyzeWorkspaceTopLevelMetadataFromProvidedEntries(
     snapshot,
     warnings,
   };
+}
+
+function hasTopLevelEntry(
+  snapshot: AnalyzeWorkspaceMetadataSnapshot,
+  ...candidateNames: string[]
+): boolean {
+  const wantedNames = new Set(candidateNames.map((name) => normalizeWorkspaceEntryName(name)));
+  return snapshot.topLevelEntries.some((entry) => wantedNames.has(normalizeWorkspaceEntryName(entry.name)));
+}
+
+function pushUnique(values: string[], nextValue: string) {
+  if (!values.includes(nextValue)) {
+    values.push(nextValue);
+  }
+}
+
+function detectLanguages(snapshot: AnalyzeWorkspaceMetadataSnapshot): string[] {
+  const languages: string[] = [];
+  const indicatorNames = new Set(
+    snapshot.manifestIndicators.map((indicator) => normalizeWorkspaceEntryName(indicator.name)),
+  );
+
+  if (
+    indicatorNames.has("package.json")
+    || indicatorNames.has("pnpm-lock.yaml")
+    || indicatorNames.has("package-lock.json")
+    || indicatorNames.has("yarn.lock")
+    || indicatorNames.has("bun.lockb")
+  ) {
+    pushUnique(
+      languages,
+      hasTopLevelEntry(snapshot, "tsconfig.json") ? "TypeScript" : "JavaScript",
+    );
+  }
+  if (indicatorNames.has("package.swift")) pushUnique(languages, "Swift");
+  if (
+    indicatorNames.has("pyproject.toml")
+    || indicatorNames.has("requirements.txt")
+    || indicatorNames.has("poetry.lock")
+  ) {
+    pushUnique(languages, "Python");
+  }
+  if (indicatorNames.has("cargo.toml") || indicatorNames.has("cargo.lock")) {
+    pushUnique(languages, "Rust");
+  }
+  if (indicatorNames.has("go.mod") || indicatorNames.has("go.sum")) {
+    pushUnique(languages, "Go");
+  }
+  if (indicatorNames.has("gemfile") || indicatorNames.has("gemfile.lock")) {
+    pushUnique(languages, "Ruby");
+  }
+  if (indicatorNames.has("composer.json") || indicatorNames.has("composer.lock")) {
+    pushUnique(languages, "PHP");
+  }
+
+  return languages;
+}
+
+function detectFrameworks(snapshot: AnalyzeWorkspaceMetadataSnapshot): string[] {
+  const frameworks: string[] = [];
+  if (hasTopLevelEntry(snapshot, ...Array.from(NEXT_CONFIG_NAMES))) {
+    frameworks.push("Next.js");
+  }
+  if (hasTopLevelEntry(snapshot, ...Array.from(VITE_CONFIG_NAMES))) {
+    frameworks.push("Vite");
+  }
+  return frameworks;
+}
+
+function detectPackageManagers(snapshot: AnalyzeWorkspaceMetadataSnapshot): string[] {
+  const packageManagers: string[] = [];
+
+  for (const entry of snapshot.topLevelEntries) {
+    const normalizedName = normalizeWorkspaceEntryName(entry.name);
+    const jsPackageManager = JS_PACKAGE_MANAGER_NAMES.get(normalizedName);
+    const otherPackageManager = OTHER_PACKAGE_MANAGER_NAMES.get(normalizedName);
+
+    if (jsPackageManager) pushUnique(packageManagers, jsPackageManager);
+    if (otherPackageManager) pushUnique(packageManagers, otherPackageManager);
+  }
+
+  return packageManagers;
+}
+
+function buildImportantFiles(
+  snapshot: AnalyzeWorkspaceMetadataSnapshot,
+): AnalyzeWorkspaceResult["detected"]["importantFiles"] {
+  return snapshot.topLevelEntries.flatMap((entry) => {
+    if (entry.redacted) return [];
+    const reason = IMPORTANT_FILE_REASONS.get(normalizeWorkspaceEntryName(entry.name));
+    return reason ? [{ path: entry.name, reason }] : [];
+  });
+}
+
+function buildSummaryTitle(snapshot: AnalyzeWorkspaceMetadataSnapshot, languages: string[]): string {
+  if (languages.length > 1) return "Multi-language workspace detected";
+
+  switch (languages[0] ?? null) {
+    case "JavaScript":
+    case "TypeScript":
+      return "JavaScript/TypeScript workspace detected";
+    case "Swift":
+      return "Swift workspace detected";
+    case "Python":
+      return "Python workspace detected";
+    case "Rust":
+      return "Rust workspace detected";
+    case "Go":
+      return "Go workspace detected";
+    case "Ruby":
+      return "Ruby workspace detected";
+    case "PHP":
+      return "PHP workspace detected";
+    default:
+      return snapshot.manifestIndicators.length > 0
+        ? "Workspace metadata collected"
+        : "Limited workspace metadata collected";
+  }
+}
+
+function buildSummaryConfidence(
+  snapshot: AnalyzeWorkspaceMetadataSnapshot,
+  languages: string[],
+): AnalyzeWorkspaceResultConfidence {
+  if (languages.length > 0 || snapshot.manifestIndicators.some((indicator) => indicator.category === "readme")) {
+    return "medium";
+  }
+  return "low";
+}
+
+function buildSetupWarnings(snapshot: AnalyzeWorkspaceMetadataSnapshot): AnalyzeWorkspaceResult["setupWarnings"] {
+  const warnings: AnalyzeWorkspaceResult["setupWarnings"] = [
+    {
+      severity: "info",
+      title: "Metadata-only result",
+      message: "This first result is based only on top-level filenames and directory names.",
+      action: "Collect deeper approved metadata later",
+    },
+  ];
+
+  if (snapshot.workspace.pathHealth?.risk === "medium") {
+    warnings.push({
+      severity: "warning",
+      title: "Workspace path warning",
+      message: "This path may slow some cloud runs or trigger compatibility fallbacks.",
+      action: "Review path health before deeper cloud analysis",
+    });
+  }
+
+  if (snapshot.redactions.length > 0) {
+    warnings.push({
+      severity: "warning",
+      title: "Sensitive-looking entries were redacted",
+      message: "Paperclip saw one or more sensitive-looking top-level names and hid them from the result.",
+      action: "Review sensitive files manually if needed",
+    });
+  }
+
+  return warnings;
+}
+
+function buildSuggestedNextActions(
+  snapshot: AnalyzeWorkspaceMetadataSnapshot,
+): AnalyzeWorkspaceResult["suggestedNextActions"] {
+  const actions: AnalyzeWorkspaceResult["suggestedNextActions"] = [
+    {
+      label: "Open diagnostics",
+      description: "Review setup and runtime details before running deeper analysis.",
+      risk: "low",
+      requiresApproval: false,
+    },
+  ];
+
+  if (snapshot.manifestIndicators.some((indicator) => indicator.category === "readme")) {
+    actions.push({
+      label: "Inspect README safely",
+      description: "Read a small approved excerpt from README to improve the project summary.",
+      risk: "low",
+      requiresApproval: true,
+    });
+  }
+
+  if (
+    snapshot.manifestIndicators.some((indicator) =>
+      ["javascript", "swift", "python", "rust", "go", "ruby", "php"].includes(indicator.category),
+    )
+  ) {
+    actions.push({
+      label: "Inspect project manifest safely",
+      description: "Read selected fields from the detected manifest file to improve the summary.",
+      risk: "low",
+      requiresApproval: true,
+    });
+  }
+
+  actions.push({
+    label: "Prepare AI summary from safe metadata",
+    description: "Use only the collected metadata to ask Cloud AI for a first summary later.",
+    risk: "low",
+    requiresApproval: true,
+  });
+
+  return actions;
+}
+
+function mentionsOverclaiming(text: string): boolean {
+  const normalized = text.toLowerCase();
+  return (
+    normalized.includes("tests passed")
+    || normalized.includes("test passed")
+    || normalized.includes("security posture")
+    || normalized.includes("security verified")
+    || normalized.includes("dependency health")
+    || normalized.includes("production ready")
+  );
+}
+
+export function buildAnalyzeWorkspaceResultFromMetadata(input: {
+  request: AnalyzeWorkspaceRequest;
+  snapshot: AnalyzeWorkspaceMetadataSnapshot;
+}): AnalyzeWorkspaceResult {
+  const languages = detectLanguages(input.snapshot);
+  const frameworks = detectFrameworks(input.snapshot);
+  const packageManagers = detectPackageManagers(input.snapshot);
+  const importantFiles = buildImportantFiles(input.snapshot);
+
+  return {
+    schemaVersion: 1,
+    resultType: "analyze_workspace_result",
+    analysisMode: "metadata_only_rule_based",
+    aiUsed: false,
+    workspace: {
+      displayName: input.request.workspace.displayName ?? input.snapshot.workspace.displayName ?? null,
+      pathHealth: input.snapshot.workspace.pathHealth ?? input.request.workspace.pathHealth ?? null,
+    },
+    summary: {
+      title: buildSummaryTitle(input.snapshot, languages),
+      description:
+        "Paperclip inspected limited top-level metadata for this workspace. It detected common project indicators but did not read file contents or run commands.",
+      confidence: buildSummaryConfidence(input.snapshot, languages),
+    },
+    detected: {
+      languages,
+      frameworks,
+      packageManagers,
+      importantFiles,
+    },
+    setupWarnings: buildSetupWarnings(input.snapshot),
+    suggestedNextActions: buildSuggestedNextActions(input.snapshot),
+    inspected: {
+      filesListed: input.snapshot.topLevelEntries.map((entry) => entry.name),
+      filesRead: [],
+      commandsRun: [],
+    },
+    notInspected: [...NOT_INSPECTED_ITEMS],
+    safety: {
+      readOnly: true,
+      filesChanged: false,
+      commandsRun: false,
+      fileContentsRead: false,
+      recursiveScan: false,
+      aiUsed: false,
+      agentStarted: false,
+      localFallbackUsed: false,
+      automaticRoutingUsed: false,
+    },
+  };
+}
+
+export function validateAnalyzeWorkspaceResult(
+  result: AnalyzeWorkspaceResult,
+): AnalyzeWorkspaceResultValidationResult {
+  const errors: string[] = [];
+
+  if (result.schemaVersion !== 1) errors.push("schemaVersion must be 1.");
+  if (result.resultType !== "analyze_workspace_result") {
+    errors.push('resultType must be "analyze_workspace_result".');
+  }
+  if (result.analysisMode !== "metadata_only_rule_based") {
+    errors.push('analysisMode must be "metadata_only_rule_based".');
+  }
+  if (result.aiUsed !== false) errors.push("aiUsed must be false.");
+  if (result.safety.readOnly !== true) errors.push("safety.readOnly must be true.");
+  if (result.safety.filesChanged !== false) errors.push("safety.filesChanged must be false.");
+  if (result.safety.commandsRun !== false) errors.push("safety.commandsRun must be false.");
+  if (result.safety.fileContentsRead !== false) errors.push("safety.fileContentsRead must be false.");
+  if (result.safety.recursiveScan !== false) errors.push("safety.recursiveScan must be false.");
+  if (result.safety.aiUsed !== false) errors.push("safety.aiUsed must be false.");
+  if (result.safety.agentStarted !== false) errors.push("safety.agentStarted must be false.");
+  if (result.safety.localFallbackUsed !== false) errors.push("safety.localFallbackUsed must be false.");
+  if (result.safety.automaticRoutingUsed !== false) {
+    errors.push("safety.automaticRoutingUsed must be false.");
+  }
+  if (result.inspected.filesRead.length > 0) errors.push("inspected.filesRead must be empty.");
+  if (result.inspected.commandsRun.length > 0) errors.push("inspected.commandsRun must be empty.");
+  if (!result.notInspected.some((item) => item.toLowerCase().includes("file contents"))) {
+    errors.push("notInspected must mention file contents.");
+  }
+  if (
+    !result.notInspected.some((item) =>
+      item.toLowerCase().includes("secret") || item.toLowerCase().includes("credential"),
+    )
+  ) {
+    errors.push("notInspected must mention secrets or credentials.");
+  }
+
+  const claimChecks = [
+    result.summary.title,
+    result.summary.description,
+    ...result.setupWarnings.flatMap((warning) => [warning.title, warning.message, warning.action ?? ""]),
+    ...result.suggestedNextActions.flatMap((action) => [action.label, action.description]),
+  ];
+  if (claimChecks.some((text) => mentionsOverclaiming(text))) {
+    errors.push("result contains overclaiming about tests, security posture, dependency health, or production readiness.");
+  }
+
+  return errors.length > 0 ? { ok: false, errors } : { ok: true };
 }
 
 export function buildAnalyzeWorkspaceSetupState(

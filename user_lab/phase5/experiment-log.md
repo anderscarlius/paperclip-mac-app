@@ -81,3 +81,9 @@ Change: Added a real top-level filename-only metadata collector route and servic
 Expected effect: Let Paperclip safely inspect only immediate workspace entry names and types, populate the existing snapshot contract, and surface that minimal metadata in the first-run flow.
 Observed result: The app can now collect and display limited top-level metadata with sensitive-name redaction, no file-content reads, no recursive scan, no commands, and no AI execution; mock mode stays clearly marked as example-only.
 Next action: Review the final diff, confirm staged safety checks stay clean, and publish Phase 5J as a commit and private GitHub backup push.
+
+Time: 2026-05-08T09:15:00+0200
+Change: Added a rule-based metadata-only Analyze Workspace result builder, result validation, and a first visible workspace summary card in Setup Health.
+Expected effect: Convert safe top-level metadata into a useful first product result without using AI, reading file contents, or running commands.
+Observed result: Paperclip now shows a conservative first summary with detected languages/tools, important files, setup warnings, suggested next actions, and explicit honesty about what was and was not inspected.
+Next action: Run focused tests and typechecks, then review the diff, commit, and push Phase 5K.
