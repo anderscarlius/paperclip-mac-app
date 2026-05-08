@@ -87,3 +87,9 @@ Change: Added a rule-based metadata-only Analyze Workspace result builder, resul
 Expected effect: Convert safe top-level metadata into a useful first product result without using AI, reading file contents, or running commands.
 Observed result: Paperclip now shows a conservative first summary with detected languages/tools, important files, setup warnings, suggested next actions, and explicit honesty about what was and was not inspected.
 Next action: Run focused tests and typechecks, then review the diff, commit, and push Phase 5K.
+
+Time: 2026-05-08T12:05:00+0200
+Change: Added an explicit, user-approved top-level README excerpt reader with a 4 KB cap, plus README-aware summary updates in Setup Health.
+Expected effect: Improve the first summary using one safe documentation excerpt while keeping the workflow read-only, non-recursive, command-free, and AI-free.
+Observed result: Paperclip can now offer a `Read small README excerpt` step, read only an allowed top-level README file, record the read transparently, and improve the first result without overclaiming.
+Next action: Run focused tests and typechecks, then review the diff, commit, and push Phase 5L.

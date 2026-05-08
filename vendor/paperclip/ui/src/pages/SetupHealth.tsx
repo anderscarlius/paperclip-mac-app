@@ -25,7 +25,9 @@ import { readLocalFallbackCandidateSignal } from "@/lib/local-fallback-offer";
 import { queryKeys } from "@/lib/queryKeys";
 import {
   buildAnalyzeWorkspaceResultFromMetadata,
+  buildReadmeExcerptRequest,
   collectAnalyzeWorkspaceTopLevelMetadataFromProvidedEntries,
+  findReadmeCandidatesFromSnapshot,
   prepareAnalyzeWorkspaceHandoff,
   buildAnalyzeWorkspaceSetupState,
   buildSetupHealthViewModel,
@@ -34,6 +36,7 @@ import {
   setupHealthStatusLabel,
   type AnalyzeWorkspaceCollectionResult,
   type AnalyzeWorkspaceHandoffResult,
+  type AnalyzeWorkspaceReadmeExcerpt,
   type AnalyzeWorkspaceResult,
   type AnalyzeWorkspaceResultValidationResult,
   type AnalyzeWorkspaceSetupState,
@@ -66,6 +69,11 @@ const MOCK_METADATA_ENTRIES: Record<MockStateId, Array<{ name: string; kind: "fi
     { name: "Tests", kind: "directory" },
     { name: "docs", kind: "directory" },
   ],
+};
+const MOCK_README_EXCERPTS: Record<MockStateId, string | null> = {
+  needs_attention: null,
+  workspace_warning: "# Paperclip Demo\n\nA lightweight Mac app for safe AI workspace analysis.\n",
+  ready: "# Paperclip App\n\nA Swift workspace for the Paperclip desktop application.\n",
 };
 
 function severityBadgeVariant(severity: SetupHealthSeverity): "default" | "secondary" | "outline" | "destructive" {
@@ -365,6 +373,8 @@ export function SetupHealth() {
   const [metadataCollectionResult, setMetadataCollectionResult] = useState<AnalyzeWorkspaceCollectionResult | null>(null);
   const [metadataPreviewSource, setMetadataPreviewSource] = useState<MetadataPreviewSource | null>(null);
   const [isCollectingMetadata, setIsCollectingMetadata] = useState(false);
+  const [readmeExcerpt, setReadmeExcerpt] = useState<AnalyzeWorkspaceReadmeExcerpt | null>(null);
+  const [isReadingReadme, setIsReadingReadme] = useState(false);
 
   const { data: health, isLoading: isHealthLoading } = useQuery({
     queryKey: queryKeys.health,
@@ -406,12 +416,17 @@ export function SetupHealth() {
     return buildAnalyzeWorkspaceResultFromMetadata({
       request: analyzeSetupState.request,
       snapshot: metadataCollectionResult.snapshot,
+      readmeExcerpt,
     });
-  }, [analyzeSetupState.request, metadataCollectionResult]);
+  }, [analyzeSetupState.request, metadataCollectionResult, readmeExcerpt]);
   const firstWorkspaceResultValidation = useMemo<AnalyzeWorkspaceResultValidationResult | null>(() => {
     if (!firstWorkspaceResult) return null;
     return validateAnalyzeWorkspaceResult(firstWorkspaceResult);
   }, [firstWorkspaceResult]);
+  const readmeCandidates = useMemo(
+    () => metadataCollectionResult?.ok ? findReadmeCandidatesFromSnapshot(metadataCollectionResult.snapshot) : [],
+    [metadataCollectionResult],
+  );
 
   const sourceNote = useMemo(() => {
     if (viewMode === "mock") {
@@ -459,6 +474,7 @@ export function SetupHealth() {
 
     setIsCollectingMetadata(true);
     setSelectedActionMessage(null);
+    setReadmeExcerpt(null);
     try {
       let result: AnalyzeWorkspaceCollectionResult;
       let previewSource: MetadataPreviewSource;
@@ -510,6 +526,77 @@ export function SetupHealth() {
     }
   }
 
+  async function handleReadReadmeExcerpt() {
+    if (!analyzeSetupState.request || !metadataCollectionResult?.ok) return;
+    const candidate = readmeCandidates[0];
+    if (!candidate) {
+      setSelectedActionMessage("No top-level README candidate was found.");
+      return;
+    }
+
+    const excerptRequest = buildReadmeExcerptRequest({
+      workspacePath: analyzeSetupState.request.workspace.path,
+      displayName: analyzeSetupState.request.workspace.displayName ?? null,
+      filename: candidate,
+      maxBytes: 4096,
+    });
+    if (!excerptRequest) {
+      setSelectedActionMessage("README excerpt request could not be prepared safely.");
+      return;
+    }
+
+    setIsReadingReadme(true);
+    setSelectedActionMessage(null);
+
+    try {
+      if (viewMode === "mock") {
+        const mockContent = MOCK_README_EXCERPTS[selectedState];
+        if (!mockContent) {
+          setSelectedActionMessage("No top-level README candidate was found.");
+          return;
+        }
+
+        setReadmeExcerpt({
+          schemaVersion: 1,
+          excerptType: "analyze_workspace_readme_excerpt",
+          filename: candidate,
+          bytesRead: new TextEncoder().encode(mockContent).length,
+          truncated: false,
+          content: mockContent,
+          safety: {
+            readOnly: true,
+            filesChanged: false,
+            commandsRun: false,
+            networkAccessed: false,
+            aiUsed: false,
+            recursiveScan: false,
+            followedSymlink: false,
+          },
+        });
+        return;
+      }
+
+      const response = await analyzeWorkspaceApi.readmeExcerpt({
+        workspacePath: excerptRequest.workspace.path,
+        filename: excerptRequest.candidate.filename,
+        maxBytes: excerptRequest.limits.maxBytes,
+      });
+      if (!response.ok) {
+        setSelectedActionMessage(response.error);
+        return;
+      }
+      setReadmeExcerpt(response.excerpt);
+    } catch (error) {
+      setSelectedActionMessage(
+        error instanceof Error
+          ? `README excerpt could not be read safely: ${error.message}`
+          : "README excerpt could not be read safely.",
+      );
+    } finally {
+      setIsReadingReadme(false);
+    }
+  }
+
   function handleAction(label: string) {
     if (label === "Analyze this workspace") {
       if (viewModel.primaryAction.disabled) return;
@@ -517,6 +604,7 @@ export function SetupHealth() {
       setSelectedActionMessage(null);
       setMetadataCollectionResult(null);
       setMetadataPreviewSource(null);
+      setReadmeExcerpt(null);
       return;
     }
 
@@ -531,6 +619,7 @@ export function SetupHealth() {
       setSelectedActionMessage(null);
       setMetadataCollectionResult(null);
       setMetadataPreviewSource(null);
+      setReadmeExcerpt(null);
       return;
     }
 
@@ -831,7 +920,7 @@ export function SetupHealth() {
                 </div>
 
                 <div className="rounded-md border border-border/70 bg-background/80 px-3 py-3 text-sm text-muted-foreground">
-                  <div>No file contents were read.</div>
+                  <div>{readmeExcerpt ? "One approved README excerpt was read." : "No file contents were read."}</div>
                   <div>No commands were run.</div>
                   <div>No recursive scan was performed.</div>
                   <div>Secrets were not read.</div>
@@ -841,16 +930,18 @@ export function SetupHealth() {
                   ) : null}
                 </div>
 
-                {metadataCollectionResult.warnings.length > 0 ? (
+                {metadataCollectionResult.warnings.filter((warning) => !readmeExcerpt || warning !== "No file contents were read.").length > 0 ? (
                   <div className="space-y-2">
-                    {metadataCollectionResult.warnings.map((warning) => (
+                    {metadataCollectionResult.warnings
+                      .filter((warning) => !readmeExcerpt || warning !== "No file contents were read.")
+                      .map((warning) => (
                       <div
                         key={warning}
                         className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-muted-foreground"
                       >
                         {warning}
                       </div>
-                    ))}
+                      ))}
                   </div>
                 ) : null}
 
@@ -890,10 +981,19 @@ export function SetupHealth() {
                             ? "Example only"
                             : "Based on limited read-only metadata"}
                         </div>
-                        <div className="mt-2">This is a metadata-only first result.</div>
-                        <div>No file contents were read.</div>
+                        <div className="mt-2">
+                          {readmeExcerpt
+                            ? "This result uses limited metadata and one approved README excerpt."
+                            : "This is a metadata-only first result."}
+                        </div>
+                        <div>
+                          {readmeExcerpt
+                            ? "A small approved README excerpt was read."
+                            : "No file contents were read."}
+                        </div>
                         <div>No commands were run.</div>
                         <div>No AI was used for this result.</div>
+                        <div>No recursive scan was performed.</div>
 
                         <div className="mt-4 space-y-4">
                           <div>
@@ -967,7 +1067,11 @@ export function SetupHealth() {
                               <div>
                                 Top-level entries: {firstWorkspaceResult.inspected.filesListed.join(", ")}
                               </div>
-                              <div>Files read: none</div>
+                              <div>
+                                Files read: {firstWorkspaceResult.inspected.filesRead.length > 0
+                                  ? firstWorkspaceResult.inspected.filesRead.join(", ")
+                                  : "none"}
+                              </div>
                               <div>Commands run: none</div>
                             </div>
                           </div>
@@ -995,6 +1099,58 @@ export function SetupHealth() {
                               ) : null}
                             </div>
                           ) : null}
+
+                          <div className="rounded-md border border-border/70 bg-background/70 px-3 py-3">
+                            <div className="font-medium text-foreground">Approved README step</div>
+                            {readmeCandidates.length > 0 ? (
+                              <div className="mt-2 space-y-2">
+                                <div>Paperclip can improve this summary by reading up to 4 KB from the top-level README file. This is optional and read-only.</div>
+                                <div>Only the top-level README file will be read.</div>
+                                <div>No commands will be run.</div>
+                                <div>No AI will be used.</div>
+                                <div>No other files will be opened.</div>
+                                <div>Candidate: {readmeCandidates[0]}</div>
+                                <Button
+                                  size="sm"
+                                  onClick={() => {
+                                    void handleReadReadmeExcerpt();
+                                  }}
+                                  disabled={isReadingReadme}
+                                >
+                                  {isReadingReadme ? "Reading README excerpt..." : "Read small README excerpt"}
+                                </Button>
+                              </div>
+                            ) : (
+                              <div className="mt-2">No top-level README candidate was found.</div>
+                            )}
+
+                            {readmeExcerpt ? (
+                              <div className="mt-4 space-y-2">
+                                <div className="font-medium text-foreground">README excerpt read</div>
+                                <div>
+                                  {readmeExcerpt.filename} · {readmeExcerpt.bytesRead} bytes{readmeExcerpt.truncated ? " · truncated" : ""}
+                                </div>
+                                <Collapsible>
+                                  <div className="flex flex-col gap-3">
+                                    <CollapsibleTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="justify-start px-0 text-muted-foreground hover:text-foreground"
+                                      >
+                                        Approved README excerpt
+                                      </Button>
+                                    </CollapsibleTrigger>
+                                    <CollapsibleContent>
+                                      <pre className="overflow-x-auto whitespace-pre-wrap rounded-md border border-border/70 bg-background/80 p-3 text-xs text-muted-foreground">
+                                        {readmeExcerpt.content}
+                                      </pre>
+                                    </CollapsibleContent>
+                                  </div>
+                                </Collapsible>
+                              </div>
+                            ) : null}
+                          </div>
                         </div>
                       </div>
                     ) : null}
@@ -1036,6 +1192,7 @@ export function SetupHealth() {
                   setAnalyzeFlowState("closed");
                   setMetadataCollectionResult(null);
                   setMetadataPreviewSource(null);
+                  setReadmeExcerpt(null);
                 }}
               >
                 Live diagnostics
@@ -1049,6 +1206,7 @@ export function SetupHealth() {
                   setAnalyzeFlowState("closed");
                   setMetadataCollectionResult(null);
                   setMetadataPreviewSource(null);
+                  setReadmeExcerpt(null);
                 }}
               >
                 Mock states
@@ -1071,6 +1229,7 @@ export function SetupHealth() {
                       setAnalyzeFlowState("closed");
                       setMetadataCollectionResult(null);
                       setMetadataPreviewSource(null);
+                      setReadmeExcerpt(null);
                     }}
                   >
                     {state.label}

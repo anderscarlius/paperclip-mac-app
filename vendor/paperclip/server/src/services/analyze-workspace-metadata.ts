@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import path from "node:path";
 
 type WorkspacePathHealth = {
   risk: "none" | "low" | "medium" | "unknown";
@@ -99,7 +100,36 @@ export type AnalyzeWorkspaceServerCollectionResult =
     warnings: string[];
   };
 
+type AnalyzeWorkspaceServerReadmeExcerpt = {
+  schemaVersion: 1;
+  excerptType: "analyze_workspace_readme_excerpt";
+  filename: string;
+  bytesRead: number;
+  truncated: boolean;
+  content: string;
+  safety: {
+    readOnly: true;
+    filesChanged: false;
+    commandsRun: false;
+    networkAccessed: false;
+    aiUsed: false;
+    recursiveScan: false;
+    followedSymlink: false;
+  };
+};
+
+export type AnalyzeWorkspaceServerReadmeExcerptResult =
+  | {
+    ok: true;
+    excerpt: AnalyzeWorkspaceServerReadmeExcerpt;
+  }
+  | {
+    ok: false;
+    error: string;
+  };
+
 const DEFAULT_MAX_TOP_LEVEL_ENTRIES = 50;
+const MAX_README_BYTES = 4096;
 const REDACTED_ENTRY_NAME = "[redacted]";
 const SENSITIVE_ENTRY_NAMES = new Set([
   ".env",
@@ -150,9 +180,27 @@ const MANIFEST_INDICATOR_CATEGORIES = new Map<
   ["tests", "test"],
   ["docs", "docs"],
 ]);
+const ALLOWED_README_FILENAMES = new Set([
+  "README",
+  "README.md",
+  "README.txt",
+  "readme",
+  "readme.md",
+  "readme.txt",
+]);
 
 function normalizeWorkspaceEntryName(name: string) {
   return name.trim().toLowerCase();
+}
+
+function isAllowedReadmeFilename(name: string) {
+  const trimmed = name.trim();
+  if (!trimmed) return false;
+  if (trimmed.includes("/") || trimmed.includes("\\") || trimmed.includes("\0") || trimmed.includes("..")) {
+    return false;
+  }
+  if (isSensitiveWorkspaceEntryName(trimmed)) return false;
+  return ALLOWED_README_FILENAMES.has(trimmed);
 }
 
 function isSensitiveWorkspaceEntryName(name: string) {
@@ -358,4 +406,85 @@ export async function collectAnalyzeWorkspaceTopLevelMetadataFromFilesystem(
     snapshot,
     warnings: buildWarnings({ snapshot, truncated }),
   };
+}
+
+export async function readTopLevelReadmeExcerpt(input: {
+  workspacePath: string;
+  filename: string;
+  maxBytes?: number;
+}): Promise<AnalyzeWorkspaceServerReadmeExcerptResult> {
+  const workspacePath = input.workspacePath.trim();
+  if (!workspacePath) {
+    return { ok: false, error: "Workspace path is required." };
+  }
+  if (!isAllowedReadmeFilename(input.filename)) {
+    return { ok: false, error: "README filename is not allowed." };
+  }
+
+  const maxBytes = Math.min(Math.max(input.maxBytes ?? MAX_README_BYTES, 1), MAX_README_BYTES);
+
+  try {
+    const workspaceStats = await fs.lstat(workspacePath);
+    if (!workspaceStats.isDirectory()) {
+      return { ok: false, error: "Workspace path must be a directory." };
+    }
+  } catch {
+    return { ok: false, error: "Workspace path is not accessible." };
+  }
+
+  const resolvedWorkspacePath = path.resolve(workspacePath);
+  const resolvedReadmePath = path.resolve(resolvedWorkspacePath, input.filename);
+  const relativePath = path.relative(resolvedWorkspacePath, resolvedReadmePath);
+  if (
+    relativePath.startsWith("..")
+    || path.isAbsolute(relativePath)
+    || relativePath.includes(path.sep)
+  ) {
+    return { ok: false, error: "README path must stay at the top level of the workspace." };
+  }
+
+  try {
+    const stats = await fs.lstat(resolvedReadmePath);
+    if (stats.isSymbolicLink()) {
+      return { ok: false, error: "README symlinks are not allowed." };
+    }
+    if (!stats.isFile()) {
+      return { ok: false, error: "README target must be a regular file." };
+    }
+
+    const handle = await fs.open(resolvedReadmePath, "r");
+    try {
+      const buffer = Buffer.alloc(maxBytes);
+      const { bytesRead } = await handle.read(buffer, 0, maxBytes, 0);
+      const contentBuffer = buffer.subarray(0, bytesRead);
+      if (contentBuffer.includes(0)) {
+        return { ok: false, error: "README excerpt appears to be binary and was not read." };
+      }
+
+      return {
+        ok: true,
+        excerpt: {
+          schemaVersion: 1,
+          excerptType: "analyze_workspace_readme_excerpt",
+          filename: input.filename,
+          bytesRead,
+          truncated: stats.size > bytesRead,
+          content: contentBuffer.toString("utf8"),
+          safety: {
+            readOnly: true,
+            filesChanged: false,
+            commandsRun: false,
+            networkAccessed: false,
+            aiUsed: false,
+            recursiveScan: false,
+            followedSymlink: false,
+          },
+        },
+      };
+    } finally {
+      await handle.close();
+    }
+  } catch {
+    return { ok: false, error: "README excerpt could not be read safely." };
+  }
 }

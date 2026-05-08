@@ -296,18 +296,67 @@ export type AnalyzeWorkspaceResult = {
     readOnly: true;
     filesChanged: false;
     commandsRun: false;
-    fileContentsRead: false;
+    fileContentsRead: boolean;
     recursiveScan: false;
     aiUsed: false;
     agentStarted: false;
     localFallbackUsed: false;
     automaticRoutingUsed: false;
   };
+  contentReads: Array<{
+    path: string;
+    maxBytes: number;
+    bytesRead: number;
+    truncated: boolean;
+    approved: true;
+  }>;
 };
 
 export type AnalyzeWorkspaceResultValidationResult =
   | { ok: true }
   | { ok: false; errors: string[] };
+
+export type AnalyzeWorkspaceReadmeExcerptRequest = {
+  schemaVersion: 1;
+  requestType: "analyze_workspace_readme_excerpt";
+  workspace: {
+    path: string;
+    displayName?: string | null;
+  };
+  candidate: {
+    filename: string;
+  };
+  limits: {
+    maxBytes: number;
+    recursive: false;
+    followSymlinks: false;
+  };
+  safety: {
+    readOnly: true;
+    allowFileWrites: false;
+    allowCommandExecution: false;
+    allowNetworkAccess: false;
+    allowAI: false;
+  };
+};
+
+export type AnalyzeWorkspaceReadmeExcerpt = {
+  schemaVersion: 1;
+  excerptType: "analyze_workspace_readme_excerpt";
+  filename: string;
+  bytesRead: number;
+  truncated: boolean;
+  content: string;
+  safety: {
+    readOnly: true;
+    filesChanged: false;
+    commandsRun: false;
+    networkAccessed: false;
+    aiUsed: false;
+    recursiveScan: false;
+    followedSymlink: false;
+  };
+};
 
 export type SetupHealthDiagnostics = {
   cloudAi?: {
@@ -431,6 +480,14 @@ const IMPORTANT_FILE_REASONS = new Map<string, string>([
 ]);
 const NEXT_CONFIG_NAMES = new Set(["next.config.js", "next.config.mjs", "next.config.ts"]);
 const VITE_CONFIG_NAMES = new Set(["vite.config.js", "vite.config.mjs", "vite.config.ts"]);
+const READ_ME_CANDIDATE_ORDER = [
+  "README.md",
+  "README",
+  "README.txt",
+  "readme.md",
+  "readme",
+  "readme.txt",
+] as const;
 const JS_PACKAGE_MANAGER_NAMES = new Map<string, string>([
   ["pnpm-lock.yaml", "pnpm"],
   ["package-lock.json", "npm"],
@@ -748,6 +805,17 @@ export function isSensitiveWorkspaceEntryName(name: string): boolean {
   return false;
 }
 
+export function isAllowedReadmeFilename(name: string): boolean {
+  if (typeof name !== "string") return false;
+  const trimmed = name.trim();
+  if (trimmed.length === 0) return false;
+  if (trimmed.includes("/") || trimmed.includes("\\") || trimmed.includes("\0") || trimmed.includes("..")) {
+    return false;
+  }
+  if (isSensitiveWorkspaceEntryName(trimmed)) return false;
+  return READ_ME_CANDIDATE_ORDER.includes(trimmed as (typeof READ_ME_CANDIDATE_ORDER)[number]);
+}
+
 export function classifyManifestIndicator(
   name: string,
 ): AnalyzeWorkspaceManifestIndicator | null {
@@ -759,6 +827,54 @@ export function classifyManifestIndicator(
     name,
     present: true,
     category,
+  };
+}
+
+export function findReadmeCandidatesFromSnapshot(
+  snapshot: AnalyzeWorkspaceMetadataSnapshot,
+): string[] {
+  const topLevelNames = new Set(
+    snapshot.topLevelEntries
+      .filter((entry) => entry.redacted !== true)
+      .map((entry) => entry.name),
+  );
+
+  return READ_ME_CANDIDATE_ORDER.filter((candidate) =>
+    topLevelNames.has(candidate) && isAllowedReadmeFilename(candidate),
+  );
+}
+
+export function buildReadmeExcerptRequest(input: {
+  workspacePath: string;
+  displayName?: string | null;
+  filename: string;
+  maxBytes?: number;
+}): AnalyzeWorkspaceReadmeExcerptRequest | null {
+  const workspacePath = input.workspacePath.trim();
+  if (!workspacePath || !isAllowedReadmeFilename(input.filename)) return null;
+
+  return {
+    schemaVersion: 1,
+    requestType: "analyze_workspace_readme_excerpt",
+    workspace: {
+      path: workspacePath,
+      displayName: input.displayName ?? null,
+    },
+    candidate: {
+      filename: input.filename,
+    },
+    limits: {
+      maxBytes: Math.min(input.maxBytes ?? 4096, 4096),
+      recursive: false,
+      followSymlinks: false,
+    },
+    safety: {
+      readOnly: true,
+      allowFileWrites: false,
+      allowCommandExecution: false,
+      allowNetworkAccess: false,
+      allowAI: false,
+    },
   };
 }
 
@@ -1162,14 +1278,38 @@ function mentionsOverclaiming(text: string): boolean {
   );
 }
 
+function extractReadmeHeading(readmeExcerpt: AnalyzeWorkspaceReadmeExcerpt | null | undefined): string | null {
+  if (!readmeExcerpt) return null;
+  const firstMeaningfulLine = readmeExcerpt.content
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+
+  if (!firstMeaningfulLine) return null;
+
+  const markdownHeadingMatch = firstMeaningfulLine.match(/^#\s+(.+)$/u);
+  if (!markdownHeadingMatch) return null;
+
+  const heading = markdownHeadingMatch[1]?.trim();
+  return heading && heading.length > 0 ? heading : null;
+}
+
 export function buildAnalyzeWorkspaceResultFromMetadata(input: {
   request: AnalyzeWorkspaceRequest;
   snapshot: AnalyzeWorkspaceMetadataSnapshot;
+  readmeExcerpt?: AnalyzeWorkspaceReadmeExcerpt | null;
 }): AnalyzeWorkspaceResult {
   const languages = detectLanguages(input.snapshot);
   const frameworks = detectFrameworks(input.snapshot);
   const packageManagers = detectPackageManagers(input.snapshot);
   const importantFiles = buildImportantFiles(input.snapshot);
+  const readmeHeading = extractReadmeHeading(input.readmeExcerpt);
+  const readmeWasRead = Boolean(input.readmeExcerpt);
+  const summaryDescription = readmeWasRead
+    ? readmeHeading
+      ? `Paperclip inspected limited top-level metadata and one approved README excerpt. README heading suggests this project is called "${readmeHeading}", but deeper project details still need approved reads or AI later.`
+      : "Paperclip inspected limited top-level metadata and one approved README excerpt. It used that excerpt only as a cautious documentation signal and did not run commands or use AI."
+    : "Paperclip inspected limited top-level metadata for this workspace. It detected common project indicators but did not read file contents or run commands.";
 
   return {
     schemaVersion: 1,
@@ -1182,8 +1322,7 @@ export function buildAnalyzeWorkspaceResultFromMetadata(input: {
     },
     summary: {
       title: buildSummaryTitle(input.snapshot, languages),
-      description:
-        "Paperclip inspected limited top-level metadata for this workspace. It detected common project indicators but did not read file contents or run commands.",
+      description: summaryDescription,
       confidence: buildSummaryConfidence(input.snapshot, languages),
     },
     detected: {
@@ -1196,7 +1335,7 @@ export function buildAnalyzeWorkspaceResultFromMetadata(input: {
     suggestedNextActions: buildSuggestedNextActions(input.snapshot),
     inspected: {
       filesListed: input.snapshot.topLevelEntries.map((entry) => entry.name),
-      filesRead: [],
+      filesRead: input.readmeExcerpt ? [input.readmeExcerpt.filename] : [],
       commandsRun: [],
     },
     notInspected: [...NOT_INSPECTED_ITEMS],
@@ -1204,13 +1343,22 @@ export function buildAnalyzeWorkspaceResultFromMetadata(input: {
       readOnly: true,
       filesChanged: false,
       commandsRun: false,
-      fileContentsRead: false,
+      fileContentsRead: readmeWasRead,
       recursiveScan: false,
       aiUsed: false,
       agentStarted: false,
       localFallbackUsed: false,
       automaticRoutingUsed: false,
     },
+    contentReads: input.readmeExcerpt
+      ? [{
+        path: input.readmeExcerpt.filename,
+        maxBytes: 4096,
+        bytesRead: input.readmeExcerpt.bytesRead,
+        truncated: input.readmeExcerpt.truncated,
+        approved: true,
+      }]
+      : [],
   };
 }
 
@@ -1230,7 +1378,9 @@ export function validateAnalyzeWorkspaceResult(
   if (result.safety.readOnly !== true) errors.push("safety.readOnly must be true.");
   if (result.safety.filesChanged !== false) errors.push("safety.filesChanged must be false.");
   if (result.safety.commandsRun !== false) errors.push("safety.commandsRun must be false.");
-  if (result.safety.fileContentsRead !== false) errors.push("safety.fileContentsRead must be false.");
+  if (typeof result.safety.fileContentsRead !== "boolean") {
+    errors.push("safety.fileContentsRead must be a boolean.");
+  }
   if (result.safety.recursiveScan !== false) errors.push("safety.recursiveScan must be false.");
   if (result.safety.aiUsed !== false) errors.push("safety.aiUsed must be false.");
   if (result.safety.agentStarted !== false) errors.push("safety.agentStarted must be false.");
@@ -1238,8 +1388,19 @@ export function validateAnalyzeWorkspaceResult(
   if (result.safety.automaticRoutingUsed !== false) {
     errors.push("safety.automaticRoutingUsed must be false.");
   }
-  if (result.inspected.filesRead.length > 0) errors.push("inspected.filesRead must be empty.");
   if (result.inspected.commandsRun.length > 0) errors.push("inspected.commandsRun must be empty.");
+  if (result.safety.fileContentsRead === true && result.inspected.filesRead.length === 0) {
+    errors.push("inspected.filesRead must list approved content reads when fileContentsRead is true.");
+  }
+  if (result.safety.fileContentsRead === false && result.inspected.filesRead.length > 0) {
+    errors.push("safety.fileContentsRead must be true when inspected.filesRead is not empty.");
+  }
+  if (result.safety.fileContentsRead === true && result.contentReads.length === 0) {
+    errors.push("contentReads must describe approved content reads when fileContentsRead is true.");
+  }
+  if (result.safety.fileContentsRead === false && result.contentReads.length > 0) {
+    errors.push("contentReads must be empty when fileContentsRead is false.");
+  }
   if (!result.notInspected.some((item) => item.toLowerCase().includes("file contents"))) {
     errors.push("notInspected must mention file contents.");
   }

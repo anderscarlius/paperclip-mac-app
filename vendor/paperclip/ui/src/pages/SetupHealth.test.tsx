@@ -20,6 +20,7 @@ import {
 const healthGetMock = vi.fn();
 const heartbeatsListMock = vi.fn();
 const analyzeWorkspaceCollectMetadataMock = vi.fn();
+const analyzeWorkspaceReadmeExcerptMock = vi.fn();
 
 vi.mock("@/context/CompanyContext", () => ({
   useCompany: () => ({ selectedCompanyId: "company-1" }),
@@ -41,6 +42,7 @@ vi.mock("@/api/heartbeats", () => ({
 vi.mock("@/api/analyze-workspace", () => ({
   analyzeWorkspaceApi: {
     collectMetadata: (input: unknown) => analyzeWorkspaceCollectMetadataMock(input),
+    readmeExcerpt: (input: unknown) => analyzeWorkspaceReadmeExcerptMock(input),
   },
 }));
 
@@ -80,6 +82,7 @@ describe("SetupHealth", () => {
     });
     heartbeatsListMock.mockResolvedValue([]);
     analyzeWorkspaceCollectMetadataMock.mockReset();
+    analyzeWorkspaceReadmeExcerptMock.mockReset();
     analyzeWorkspaceCollectMetadataMock.mockResolvedValue({
       ok: true,
       snapshot: {
@@ -125,6 +128,26 @@ describe("SetupHealth", () => {
         "Collection is filename-only.",
         "No file contents were read.",
       ],
+    });
+    analyzeWorkspaceReadmeExcerptMock.mockResolvedValue({
+      ok: true,
+      excerpt: {
+        schemaVersion: 1,
+        excerptType: "analyze_workspace_readme_excerpt",
+        filename: "README.md",
+        bytesRead: 48,
+        truncated: false,
+        content: "# Paperclip App\n\nA safe workspace summary demo.\n",
+        safety: {
+          readOnly: true,
+          filesChanged: false,
+          commandsRun: false,
+          networkAccessed: false,
+          aiUsed: false,
+          recursiveScan: false,
+          followedSymlink: false,
+        },
+      },
     });
   });
 
@@ -697,4 +720,72 @@ describe("SetupHealth", () => {
       root.unmount();
     });
   });
+
+  it("offers and applies the approved README excerpt step", async () => {
+    const root = renderSetupHealth(container);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const mockModeButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Mock states");
+    act(() => {
+      mockModeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const readyButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Ready");
+    act(() => {
+      readyButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const analyzeButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Analyze this workspace");
+    act(() => {
+      analyzeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const continueButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Continue");
+    act(() => {
+      continueButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const prepareButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Prepare request");
+    act(() => {
+      prepareButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const collectButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Collect limited metadata");
+    await act(async () => {
+      collectButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain("Read small README excerpt");
+    expect(container.textContent).toContain("up to 4 KB");
+
+    const readmeButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Read small README excerpt");
+    await act(async () => {
+      readmeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain("README excerpt read");
+    expect(container.textContent).toContain("README.md");
+    expect(container.textContent).toContain("This result uses limited metadata and one approved README excerpt.");
+    expect(container.textContent).toContain("A small approved README excerpt was read.");
+    expect(container.textContent).toContain("No commands were run.");
+    expect(container.textContent).toContain("No AI was used for this result.");
+    expect(container.textContent).not.toContain("No file contents were read.");
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
 });

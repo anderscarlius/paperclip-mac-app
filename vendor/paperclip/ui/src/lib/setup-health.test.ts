@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   buildAnalyzeWorkspaceRequest,
+  buildReadmeExcerptRequest,
   buildAnalyzeWorkspaceResultFromMetadata,
   collectAnalyzeWorkspaceTopLevelMetadataFromProvidedEntries,
   buildAnalyzeWorkspaceMetadataSnapshotFromEntries,
   classifyManifestIndicator,
+  findReadmeCandidatesFromSnapshot,
+  isAllowedReadmeFilename,
   isSensitiveWorkspaceEntryName,
   validateAnalyzeWorkspaceResult,
   validateAnalyzeWorkspaceMetadataSnapshot,
@@ -25,6 +28,34 @@ describe("setup-health metadata snapshot helpers", () => {
 
   it("does not mark README.md as sensitive", () => {
     expect(isSensitiveWorkspaceEntryName("README.md")).toBe(false);
+  });
+
+  it("accepts README.md as an allowed README filename", () => {
+    expect(isAllowedReadmeFilename("README.md")).toBe(true);
+  });
+
+  it("accepts README as an allowed README filename", () => {
+    expect(isAllowedReadmeFilename("README")).toBe(true);
+  });
+
+  it("accepts README.txt as an allowed README filename", () => {
+    expect(isAllowedReadmeFilename("README.txt")).toBe(true);
+  });
+
+  it("rejects docs/README.md as an allowed README filename", () => {
+    expect(isAllowedReadmeFilename("docs/README.md")).toBe(false);
+  });
+
+  it("rejects ../README.md as an allowed README filename", () => {
+    expect(isAllowedReadmeFilename("../README.md")).toBe(false);
+  });
+
+  it("rejects .env as an allowed README filename", () => {
+    expect(isAllowedReadmeFilename(".env")).toBe(false);
+  });
+
+  it("rejects README.secret as an allowed README filename", () => {
+    expect(isAllowedReadmeFilename("README.secret")).toBe(false);
   });
 
   it("classifies package.json as a javascript manifest indicator", () => {
@@ -252,6 +283,51 @@ describe("setup-health metadata snapshot helpers", () => {
       expect(result.snapshot).toBeNull();
       expect(result.errors.length).toBeGreaterThan(0);
     }
+  });
+
+  it("finds top-level README candidates in stable ordering", () => {
+    const snapshot = buildAnalyzeWorkspaceMetadataSnapshotFromEntries({
+      entries: [
+        { name: "readme.txt", kind: "file" },
+        { name: "README", kind: "file" },
+        { name: "README.md", kind: "file" },
+      ],
+    });
+
+    expect(findReadmeCandidatesFromSnapshot(snapshot)).toEqual([
+      "README.md",
+      "README",
+      "readme.txt",
+    ]);
+  });
+
+  it("does not include redacted entries as README candidates", () => {
+    const snapshot = buildAnalyzeWorkspaceMetadataSnapshotFromEntries({
+      entries: [
+        { name: ".env", kind: "file" },
+      ],
+    });
+
+    expect(findReadmeCandidatesFromSnapshot(snapshot)).toEqual([]);
+  });
+
+  it("builds a README excerpt request for an allowed filename", () => {
+    const request = buildReadmeExcerptRequest({
+      workspacePath: "/Users/example/project",
+      filename: "README.md",
+    });
+
+    expect(request).not.toBeNull();
+    expect(request?.limits.maxBytes).toBe(4096);
+  });
+
+  it("returns null for a forbidden README filename", () => {
+    const request = buildReadmeExcerptRequest({
+      workspacePath: "/Users/example/project",
+      filename: "docs/README.md",
+    });
+
+    expect(request).toBeNull();
   });
 
   it("builds a metadata-only analyze-workspace result", () => {
@@ -500,5 +576,44 @@ describe("setup-health metadata snapshot helpers", () => {
 
     const validation = validateAnalyzeWorkspaceResult(mutatedResult);
     expect(validation.ok).toBe(false);
+  });
+
+  it("includes README in filesRead after an approved excerpt", () => {
+    const request = buildAnalyzeWorkspaceRequest({
+      workspace: { selected: true, path: "/Users/example/project" },
+    });
+    const snapshot = buildAnalyzeWorkspaceMetadataSnapshotFromEntries({
+      entries: [{ name: "README.md", kind: "file" }],
+    });
+
+    expect(request).not.toBeNull();
+    if (!request) return;
+
+    const result = buildAnalyzeWorkspaceResultFromMetadata({
+      request,
+      snapshot,
+      readmeExcerpt: {
+        schemaVersion: 1,
+        excerptType: "analyze_workspace_readme_excerpt",
+        filename: "README.md",
+        bytesRead: 64,
+        truncated: false,
+        content: "# Demo Project\n\nA sample app.\n",
+        safety: {
+          readOnly: true,
+          filesChanged: false,
+          commandsRun: false,
+          networkAccessed: false,
+          aiUsed: false,
+          recursiveScan: false,
+          followedSymlink: false,
+        },
+      },
+    });
+
+    expect(result.inspected.filesRead).toEqual(["README.md"]);
+    expect(result.inspected.commandsRun).toEqual([]);
+    expect(result.aiUsed).toBe(false);
+    expect(result.safety.fileContentsRead).toBe(true);
   });
 });

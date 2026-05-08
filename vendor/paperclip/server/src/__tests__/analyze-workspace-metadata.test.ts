@@ -2,7 +2,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { collectAnalyzeWorkspaceTopLevelMetadataFromFilesystem } from "../services/analyze-workspace-metadata.js";
+import {
+  collectAnalyzeWorkspaceTopLevelMetadataFromFilesystem,
+  readTopLevelReadmeExcerpt,
+} from "../services/analyze-workspace-metadata.js";
 
 describe("analyze workspace metadata collector", () => {
   let tmpDir: string;
@@ -91,5 +94,67 @@ describe("analyze workspace metadata collector", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.snapshot).toBeNull();
+  });
+
+  it("reads the first bytes of a top-level README.md and truncates at maxBytes", async () => {
+    await fs.writeFile(path.join(tmpDir, "README.md"), "# Demo Project\n\nThis is a long enough README excerpt.\n");
+
+    const result = await readTopLevelReadmeExcerpt({
+      workspacePath: tmpDir,
+      filename: "README.md",
+      maxBytes: 12,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.excerpt.filename).toBe("README.md");
+    expect(result.excerpt.bytesRead).toBe(12);
+    expect(result.excerpt.truncated).toBe(true);
+    expect(result.excerpt.safety.commandsRun).toBe(false);
+  });
+
+  it("rejects forbidden README filenames and symlinks", async () => {
+    await fs.writeFile(path.join(tmpDir, "README.md"), "# Demo\n");
+    await fs.symlink(path.join(tmpDir, "README.md"), path.join(tmpDir, "README.txt"));
+
+    const forbiddenNameResult = await readTopLevelReadmeExcerpt({
+      workspacePath: tmpDir,
+      filename: "../README.md",
+    });
+    const envResult = await readTopLevelReadmeExcerpt({
+      workspacePath: tmpDir,
+      filename: ".env",
+    });
+    const symlinkResult = await readTopLevelReadmeExcerpt({
+      workspacePath: tmpDir,
+      filename: "README.txt",
+    });
+
+    expect(forbiddenNameResult.ok).toBe(false);
+    expect(envResult.ok).toBe(false);
+    expect(symlinkResult.ok).toBe(false);
+  });
+
+  it("rejects directories and nested readme paths", async () => {
+    await fs.mkdir(path.join(tmpDir, "README.md"));
+    await fs.mkdir(path.join(tmpDir, "docs"));
+    await fs.writeFile(path.join(tmpDir, "docs", "README.md"), "# nested\n");
+
+    const directoryResult = await readTopLevelReadmeExcerpt({
+      workspacePath: tmpDir,
+      filename: "README.md",
+    });
+    const nestedResult = await readTopLevelReadmeExcerpt({
+      workspacePath: tmpDir,
+      filename: "docs/README.md",
+    });
+    const missingResult = await readTopLevelReadmeExcerpt({
+      workspacePath: tmpDir,
+      filename: "README.txt",
+    });
+
+    expect(directoryResult.ok).toBe(false);
+    expect(nestedResult.ok).toBe(false);
+    expect(missingResult.ok).toBe(false);
   });
 });
