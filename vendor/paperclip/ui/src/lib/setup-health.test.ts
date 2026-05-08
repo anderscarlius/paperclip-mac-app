@@ -3,6 +3,7 @@ import {
   buildAnalyzeWorkspaceFeedbackQuestions,
   buildAnalyzeWorkspaceFlowSteps,
   buildFirstSuccessfulRunState,
+  buildPaperclipStartupState,
   buildPrivateAlphaCapabilities,
   buildManifestFieldRequest,
   buildAnalyzeWorkspaceRequest,
@@ -112,6 +113,142 @@ describe("setup-health flow steps", () => {
     expect(steps.find((step) => step.id === "readme_excerpt")?.status).toBe("complete");
     expect(steps.find((step) => step.id === "manifest_fields")?.status).toBe("complete");
     expect(steps.find((step) => step.id === "improved_summary")?.status).toBe("current");
+  });
+});
+
+describe("startup transparency helpers", () => {
+  it("is not ready while health is loading", () => {
+    const state = buildPaperclipStartupState({
+      diagnosticsAvailable: false,
+      healthLoading: true,
+      runsLoading: false,
+      localAiStatus: "unknown",
+      cloudAiStatus: "unknown",
+      workspaceSelected: false,
+    });
+
+    expect(state.ready).toBe(false);
+    expect(state.title).toBe("Starting Paperclip");
+  });
+
+  it("is not ready while runs are loading", () => {
+    const state = buildPaperclipStartupState({
+      diagnosticsAvailable: false,
+      healthLoading: false,
+      runsLoading: true,
+      localAiStatus: "unknown",
+      cloudAiStatus: "unknown",
+      workspaceSelected: false,
+    });
+
+    expect(state.ready).toBe(false);
+    expect(state.slowStartHint).toContain("Setup Health will remain read-only");
+  });
+
+  it("becomes ready when diagnostics are available and loading is false", () => {
+    const state = buildPaperclipStartupState({
+      diagnosticsAvailable: true,
+      healthLoading: false,
+      runsLoading: false,
+      localAiStatus: "available_candidate",
+      cloudAiStatus: "connected",
+      workspaceSelected: true,
+    });
+
+    expect(state.ready).toBe(true);
+    expect(state.title).toBe("Startup complete");
+  });
+
+  it("includes conservative local AI availability copy", () => {
+    const state = buildPaperclipStartupState({
+      diagnosticsAvailable: true,
+      healthLoading: false,
+      runsLoading: false,
+      localAiStatus: "available",
+      cloudAiStatus: "connected",
+      workspaceSelected: true,
+    });
+
+    expect(state.steps.find((step) => step.id === "local_ai_check")?.description).toContain("appears available");
+  });
+
+  it("includes the workspace loading step", () => {
+    const state = buildPaperclipStartupState({
+      diagnosticsAvailable: false,
+      healthLoading: true,
+      runsLoading: false,
+      localAiStatus: "unknown",
+      cloudAiStatus: "unknown",
+      workspaceSelected: false,
+    });
+
+    expect(state.steps.find((step) => step.id === "workspace_state")?.label).toBe("Loading workspace state");
+  });
+
+  it("includes the slow-start hint while loading", () => {
+    const state = buildPaperclipStartupState({
+      diagnosticsAvailable: false,
+      healthLoading: true,
+      runsLoading: true,
+      localAiStatus: "unknown",
+      cloudAiStatus: "unknown",
+      workspaceSelected: false,
+    });
+
+    expect(state.slowStartHint).toContain("remain read-only until readiness is clear");
+  });
+
+  it("always says project files are not modified during startup", () => {
+    const state = buildPaperclipStartupState({
+      diagnosticsAvailable: true,
+      healthLoading: false,
+      runsLoading: false,
+      localAiStatus: "unknown",
+      cloudAiStatus: "connected",
+      workspaceSelected: true,
+    });
+
+    expect(state.safetyNote).toBe("Your project files are not modified during startup.");
+  });
+
+  it("does not imply local AI is used automatically", () => {
+    const state = buildPaperclipStartupState({
+      diagnosticsAvailable: true,
+      healthLoading: false,
+      runsLoading: false,
+      localAiStatus: "available_candidate",
+      cloudAiStatus: "connected",
+      workspaceSelected: true,
+    });
+
+    expect(state.steps.find((step) => step.id === "local_ai_check")?.description).toContain("not used automatically");
+  });
+
+  it("does not block the safe first-run flow when local AI is unavailable", () => {
+    const state = buildPaperclipStartupState({
+      diagnosticsAvailable: true,
+      healthLoading: false,
+      runsLoading: false,
+      localAiStatus: "unavailable",
+      cloudAiStatus: "connected",
+      workspaceSelected: true,
+    });
+
+    expect(state.ready).toBe(true);
+    expect(state.steps.find((step) => step.id === "local_ai_check")?.status).toBe("needs_attention");
+  });
+
+  it("handles no workspace selected conservatively", () => {
+    const state = buildPaperclipStartupState({
+      diagnosticsAvailable: true,
+      healthLoading: false,
+      runsLoading: false,
+      localAiStatus: "available_candidate",
+      cloudAiStatus: "connected",
+      workspaceSelected: false,
+    });
+
+    expect(state.steps.find((step) => step.id === "workspace_state")?.status).toBe("needs_attention");
   });
 });
 

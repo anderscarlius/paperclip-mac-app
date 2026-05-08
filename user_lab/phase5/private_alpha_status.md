@@ -16,6 +16,7 @@
 - Safety transparency
 - Private alpha feedback prompts
 - Alpha release docs and runbook
+- Startup transparency panel
 
 ## Partially working
 
@@ -23,6 +24,7 @@
 - Result quality
 - Early-user onboarding
 - Cloud/Local AI status visibility
+- Startup messaging precision
 
 ## Not built yet
 

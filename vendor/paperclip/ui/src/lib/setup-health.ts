@@ -444,6 +444,36 @@ export type AnalyzeWorkspaceFlowStep = {
   description: string;
 };
 
+export type PaperclipStartupStepId =
+  | "desktop_boot"
+  | "runtime_check"
+  | "local_ai_check"
+  | "workspace_state"
+  | "setup_health_ready";
+
+export type PaperclipStartupStepStatus =
+  | "not_started"
+  | "checking"
+  | "waiting"
+  | "ready"
+  | "needs_attention";
+
+export type PaperclipStartupStep = {
+  id: PaperclipStartupStepId;
+  label: string;
+  status: PaperclipStartupStepStatus;
+  description: string;
+};
+
+export type PaperclipStartupState = {
+  title: string;
+  summary: string;
+  ready: boolean;
+  steps: PaperclipStartupStep[];
+  safetyNote: string;
+  slowStartHint?: string | null;
+};
+
 export type PrivateAlphaCapability = {
   label: string;
   status: "working" | "partial" | "not_built";
@@ -1201,6 +1231,123 @@ export function buildAnalyzeWorkspaceFlowSteps(input: {
       description: "The summary is updated after approved README or manifest reads.",
     },
   ];
+}
+
+export function buildPaperclipStartupState(input: {
+  diagnosticsAvailable: boolean;
+  healthLoading: boolean;
+  runsLoading: boolean;
+  localAiStatus?: "available_candidate" | "available" | "optional" | "unavailable" | "unknown";
+  cloudAiStatus?: "connected" | "missing" | "unknown";
+  workspaceSelected: boolean;
+}): PaperclipStartupState {
+  const {
+    diagnosticsAvailable,
+    healthLoading,
+    runsLoading,
+    localAiStatus,
+    workspaceSelected,
+  } = input;
+
+  const stillLoading = healthLoading || runsLoading;
+  const ready = diagnosticsAvailable && !stillLoading;
+
+  const localAiStep: PaperclipStartupStep = (() => {
+    if (localAiStatus === "available" || localAiStatus === "available_candidate") {
+      return {
+        id: "local_ai_check",
+        label: "Checking local AI runtime",
+        status: "ready",
+        description: "Local AI runtime appears available. It is not used automatically in this alpha flow.",
+      };
+    }
+
+    if (localAiStatus === "unavailable") {
+      return {
+        id: "local_ai_check",
+        label: "Checking local AI runtime",
+        status: "needs_attention",
+        description: "Local AI runtime is not available. The first safe workspace flow can still continue without local AI if the rest of Setup Health is ready.",
+      };
+    }
+
+    if (stillLoading) {
+      return {
+        id: "local_ai_check",
+        label: "Checking local AI runtime",
+        status: "checking",
+        description: "Checking local AI runtime. Paperclip will not use local AI automatically.",
+      };
+    }
+
+    return {
+      id: "local_ai_check",
+      label: "Checking local AI runtime",
+      status: "waiting",
+      description: "Local AI runtime status is still being confirmed. Paperclip will not use local AI automatically.",
+    };
+  })();
+
+  const runtimeStatus: PaperclipStartupStepStatus = stillLoading
+    ? "checking"
+    : diagnosticsAvailable
+      ? "ready"
+      : "needs_attention";
+
+  const workspaceStatus: PaperclipStartupStepStatus = stillLoading
+    ? "waiting"
+    : workspaceSelected
+      ? "ready"
+      : "needs_attention";
+
+  return {
+    title: ready ? "Startup complete" : "Starting Paperclip",
+    summary: ready
+      ? "Setup Health is ready to guide the first safe run."
+      : "Paperclip is checking local readiness signals before the first safe run.",
+    ready,
+    steps: [
+      {
+        id: "desktop_boot",
+        label: "Desktop app started",
+        status: "ready",
+        description: "The Paperclip Desktop app is open and loading its local startup state.",
+      },
+      {
+        id: "runtime_check",
+        label: "Checking Paperclip runtime",
+        status: runtimeStatus,
+        description: ready
+          ? "Paperclip runtime health signals are available for Setup Health."
+          : stillLoading
+            ? "Checking whether the local Paperclip runtime is reachable."
+            : "Paperclip runtime readiness could not be confirmed yet.",
+      },
+      localAiStep,
+      {
+        id: "workspace_state",
+        label: "Loading workspace state",
+        status: workspaceStatus,
+        description: workspaceSelected
+          ? "A workspace selection signal is available for the first-run flow."
+          : stillLoading
+            ? "Loading workspace state before Setup Health is fully ready."
+            : "No workspace is selected yet for the first safe run.",
+      },
+      {
+        id: "setup_health_ready",
+        label: "Setup Health ready",
+        status: ready ? "ready" : "not_started",
+        description: ready
+          ? "Setup Health is ready to guide the first safe run."
+          : "Setup Health will become interactive after readiness is clear.",
+      },
+    ],
+    safetyNote: "Your project files are not modified during startup.",
+    slowStartHint: stillLoading
+      ? "If startup takes longer than expected, Setup Health will remain read-only until readiness is clear."
+      : null,
+  };
 }
 
 export function buildPrivateAlphaCapabilities(): PrivateAlphaCapability[] {

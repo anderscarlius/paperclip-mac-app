@@ -27,6 +27,7 @@ import {
   buildAnalyzeWorkspaceFeedbackQuestions,
   buildAnalyzeWorkspaceFlowSteps,
   buildFirstSuccessfulRunState,
+  buildPaperclipStartupState,
   buildManifestFieldRequest,
   buildAnalyzeWorkspaceResultFromMetadata,
   buildPrivateAlphaCapabilities,
@@ -48,6 +49,7 @@ import {
   type AnalyzeWorkspaceResultValidationResult,
   type AnalyzeWorkspaceSetupState,
   type FirstSuccessfulRunState,
+  type PaperclipStartupState,
   type SetupHealthCard,
   type SetupHealthDiagnostics,
   type SetupHealthSeverity,
@@ -681,6 +683,14 @@ export function SetupHealth() {
   );
   const workspacePath = workspaceCard?.advancedDetails.find((detail) => detail.label === "Selected path")?.value ?? null;
   const workspaceName = workspaceCard?.advancedDetails.find((detail) => detail.label === "Workspace")?.value ?? null;
+  const startupState = useMemo<PaperclipStartupState>(() => buildPaperclipStartupState({
+    diagnosticsAvailable: viewMode === "mock" ? true : Boolean(diagnostics),
+    healthLoading: viewMode === "mock" ? false : isHealthLoading,
+    runsLoading: viewMode === "mock" ? false : areRunsLoading,
+    localAiStatus: displayedDiagnostics.localAi?.status ?? "unknown",
+    cloudAiStatus: displayedDiagnostics.cloudAi?.authStatus ?? "unknown",
+    workspaceSelected: displayedDiagnostics.workspace?.selected === true,
+  }), [areRunsLoading, diagnostics, displayedDiagnostics, isHealthLoading, viewMode]);
   const firstSuccessfulRunState = useMemo<FirstSuccessfulRunState>(() => buildFirstSuccessfulRunState({
     workspaceSelected: Boolean(workspaceName && workspaceName !== "None"),
     readOnlyConfirmed: analyzeFlowState === "ready" || analyzeFlowState === "prepared" || analyzeFlowState === "collected",
@@ -973,6 +983,45 @@ export function SetupHealth() {
           Check that Paperclip is ready to analyze your local workspace.
         </p>
       </div>
+
+      <Card className="gap-4 py-5">
+        <CardHeader className="gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <Badge variant={startupState.ready ? "default" : "secondary"}>
+              {startupState.ready ? "Ready" : "Checking"}
+            </Badge>
+          </div>
+          <CardTitle>Startup status</CardTitle>
+          <CardDescription>{startupState.title}</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <div className="text-sm text-muted-foreground">{startupState.summary}</div>
+          <div className="rounded-md border border-border/70 bg-background/70 px-3 py-3 text-sm text-muted-foreground">
+            {startupState.safetyNote}
+          </div>
+          {startupState.slowStartHint ? (
+            <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-3 text-sm text-muted-foreground">
+              {startupState.slowStartHint}
+            </div>
+          ) : null}
+          <div className="space-y-2">
+            {startupState.steps.map((step) => (
+              <div
+                key={step.id}
+                className="rounded-md border border-border/60 bg-background/80 px-3 py-2 text-sm"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="font-medium text-foreground">{step.label}</div>
+                  <Badge variant={step.status === "ready" ? "default" : step.status === "needs_attention" ? "destructive" : "outline"}>
+                    {step.status.replace(/_/g, " ")}
+                  </Badge>
+                </div>
+                <div className="mt-1 text-muted-foreground">{step.description}</div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       <Card className={cn("gap-5 py-5", overallToneClasses(viewModel.overallStatus))}>
         <CardHeader className="gap-3">

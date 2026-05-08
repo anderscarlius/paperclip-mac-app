@@ -4,6 +4,10 @@
 
 Report that the app did not reach Setup Health and include a screenshot if possible.
 
+## Startup status feels stuck
+
+Capture the startup panel, note which step appears stuck, and report whether the app ever reached `Startup complete`.
+
 ## Setup Health looks incomplete
 
 Capture the visible readiness cards and note which expected sections are missing or unclear.
@@ -34,6 +38,7 @@ Note whether the weakness came from missing README content, missing manifest fie
 
 ## What logs or screenshots to send back
 
+- startup status panel
 - Setup Health overview
 - first summary card
 - first successful run checklist state

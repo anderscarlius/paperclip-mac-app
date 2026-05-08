@@ -24,15 +24,17 @@ You are testing the first safe workspace-inspection flow.
 
 ## What to try
 
-1. Open Setup Health.
-2. Confirm that a workspace is selected.
-3. Run the safe Analyze Workspace flow through the first summary.
-4. Optionally try the README and manifest improvement steps.
-5. Review the first successful run checklist and feedback questions.
+1. Open Paperclip and watch the startup status panel.
+2. Confirm that Setup Health becomes ready.
+3. Confirm that a workspace is selected.
+4. Run the safe Analyze Workspace flow through the first summary.
+5. Optionally try the README and manifest improvement steps.
+6. Review the first successful run checklist and feedback questions.
 
 ## What to pay attention to
 
 - Did the first flow feel understandable?
+- Did startup feel understandable before Setup Health was ready?
 - Did the safety copy feel credible?
 - Was it clear which steps were optional?
 - Did the first summary feel honest and useful?

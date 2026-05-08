@@ -502,6 +502,14 @@ describe("SetupHealth", () => {
     });
 
     expect(container.textContent).toContain("Setup Health");
+    expect(container.textContent).toContain("Startup status");
+    expect(container.textContent).toContain("Your project files are not modified during startup.");
+    expect(container.textContent).toContain("Desktop app started");
+    expect(container.textContent).toContain("Checking Paperclip runtime");
+    expect(container.textContent).toContain("Checking local AI runtime");
+    expect(container.textContent).toContain("Loading workspace state");
+    expect(container.textContent).toContain("Setup Health ready");
+    expect(container.textContent).toContain("will not use local AI automatically");
     expect(container.textContent).toContain("Analyze this workspace");
     expect(container.textContent).toContain("Cloud AI");
     expect(container.textContent).toContain("Local AI");
@@ -514,6 +522,50 @@ describe("SetupHealth", () => {
     expect(container.textContent).toContain("does not yet run AI analysis");
     expect(container.textContent).toContain("edit code");
     expect(container.textContent).toContain("execute commands");
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("shows startup complete when readiness is clear", async () => {
+    const root = renderSetupHealth(container);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const mockModeButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Mock states");
+    expect(mockModeButton).not.toBeUndefined();
+
+    act(() => {
+      mockModeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain("Startup complete");
+    expect(container.textContent).toContain("Setup Health is ready to guide the first safe run.");
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("shows a calm startup loading state before live readiness is available", () => {
+    healthGetMock.mockReset();
+    heartbeatsListMock.mockReset();
+    healthGetMock.mockReturnValue(new Promise(() => {}));
+    heartbeatsListMock.mockReturnValue(new Promise(() => {}));
+
+    const root = renderSetupHealth(container);
+
+    expect(container.textContent).toContain("Startup status");
+    expect(container.textContent).toContain("Starting Paperclip");
+    expect(container.textContent).toContain("Paperclip is checking local readiness signals before the first safe run.");
+    expect(container.textContent).toContain("Your project files are not modified during startup.");
+    expect(container.textContent).toContain(
+      "If startup takes longer than expected, Setup Health will remain read-only until readiness is clear.",
+    );
 
     act(() => {
       root.unmount();

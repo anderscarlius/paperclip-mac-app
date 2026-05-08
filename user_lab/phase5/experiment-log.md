@@ -117,3 +117,9 @@ Change: Added a first successful run checklist model, in-app checklist copy, and
 Expected effect: Make it easier for a tester to tell whether the safe first-run flow succeeded and what to report back after trying the product.
 Observed result: Setup Health now marks required versus optional first-run milestones, can declare the safe alpha flow complete, and is backed by tester-facing docs that explain handoff, troubleshooting, and success criteria.
 Next action: Run focused tests and typechecks, then review the diff, commit, and push Phase 5P.
+
+Time: 2026-05-08T16:20:00+0200
+Change: Added a startup transparency model, a Setup Health startup panel, and tester docs that explain how Paperclip startup checks runtime and local AI readiness signals.
+Expected effect: Reduce tester uncertainty during app launch by showing what Paperclip is checking, what it is not doing, and when Setup Health is truly ready.
+Observed result: Setup Health now surfaces a calm startup panel with readiness steps, conservative local AI wording, a read-only slow-start hint, and supporting docs for startup findings and tester expectations.
+Next action: Run focused tests and typechecks, then review the diff, commit, and push Phase 5Q.
