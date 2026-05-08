@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   collectAnalyzeWorkspaceTopLevelMetadataFromFilesystem,
+  readTopLevelManifestFields,
   readTopLevelReadmeExcerpt,
 } from "../services/analyze-workspace-metadata.js";
 
@@ -156,5 +157,163 @@ describe("analyze workspace metadata collector", () => {
     expect(directoryResult.ok).toBe(false);
     expect(nestedResult.ok).toBe(false);
     expect(missingResult.ok).toBe(false);
+  });
+
+  it("reads selected safe fields from package.json without exposing script values", async () => {
+    await fs.writeFile(
+      path.join(tmpDir, "package.json"),
+      JSON.stringify({
+        name: "paperclip-app",
+        description: "Demo app",
+        scripts: {
+          dev: "vite --host 127.0.0.1",
+          build: "vite build",
+        },
+        dependencies: {
+          react: "^19.0.0",
+          vite: "^6.0.0",
+        },
+        devDependencies: {
+          typescript: "^5.0.0",
+        },
+      }, null, 2),
+    );
+
+    const result = await readTopLevelManifestFields({
+      workspacePath: tmpDir,
+      filename: "package.json",
+      maxBytes: 16384,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.manifest.filename).toBe("package.json");
+    expect(result.manifest.fields.scripts).toEqual(["dev", "build"]);
+    expect(result.manifest.fields.dependencies).toEqual(["react", "vite"]);
+    expect(result.manifest.omitted).toContain("script command values");
+    expect(result.manifest.safety.commandsRun).toBe(false);
+  });
+
+  it("rejects forbidden, nested, symlink, and directory manifest paths", async () => {
+    await fs.writeFile(path.join(tmpDir, "package.json"), "{}");
+    await fs.mkdir(path.join(tmpDir, "src"));
+    await fs.writeFile(path.join(tmpDir, "src", "package.json"), "{}");
+    await fs.symlink(path.join(tmpDir, "package.json"), path.join(tmpDir, "Package.swift"));
+    await fs.mkdir(path.join(tmpDir, "go.mod"));
+
+    const forbidden = await readTopLevelManifestFields({
+      workspacePath: tmpDir,
+      filename: "../package.json",
+    });
+    const envResult = await readTopLevelManifestFields({
+      workspacePath: tmpDir,
+      filename: ".env",
+    });
+    const nested = await readTopLevelManifestFields({
+      workspacePath: tmpDir,
+      filename: "src/package.json",
+    });
+    const symlink = await readTopLevelManifestFields({
+      workspacePath: tmpDir,
+      filename: "Package.swift",
+    });
+    const directory = await readTopLevelManifestFields({
+      workspacePath: tmpDir,
+      filename: "go.mod",
+    });
+
+    expect(forbidden.ok).toBe(false);
+    expect(envResult.ok).toBe(false);
+    expect(nested.ok).toBe(false);
+    expect(symlink.ok).toBe(false);
+    expect(directory.ok).toBe(false);
+  });
+
+  it("parses pyproject.toml, Cargo.toml, go.mod, and Package.swift conservatively", async () => {
+    await fs.writeFile(path.join(tmpDir, "pyproject.toml"), `
+[project]
+name = "demo-py"
+version = "0.1.0"
+description = "Python demo"
+dependencies = ["fastapi>=0.1", "uvicorn>=0.1"]
+
+[build-system]
+build-backend = "setuptools.build_meta"
+`);
+    await fs.writeFile(path.join(tmpDir, "Cargo.toml"), `
+[package]
+name = "demo-rs"
+version = "0.1.0"
+description = "Rust demo"
+
+[dependencies]
+serde = "1"
+tokio = "1"
+`);
+    await fs.writeFile(path.join(tmpDir, "go.mod"), `
+module example.com/demo
+go 1.22
+require (
+  github.com/gin-gonic/gin v1.10.0
+)
+replace example.com/local => ../local
+`);
+    await fs.writeFile(path.join(tmpDir, "Package.swift"), `
+// swift-tools-version: 5.9
+import PackageDescription
+let package = Package(
+  name: "PaperclipDesktop",
+  platforms: [.macOS(.v14)],
+  products: [
+    .executable(name: "PaperclipDesktop", targets: ["PaperclipDesktop"])
+  ],
+  dependencies: [
+    .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.0.0")
+  ],
+  targets: [
+    .executableTarget(name: "PaperclipDesktop")
+  ]
+)
+`);
+
+    const pyproject = await readTopLevelManifestFields({ workspacePath: tmpDir, filename: "pyproject.toml" });
+    const cargo = await readTopLevelManifestFields({ workspacePath: tmpDir, filename: "Cargo.toml" });
+    const gomod = await readTopLevelManifestFields({ workspacePath: tmpDir, filename: "go.mod", maxBytes: 999999 });
+    const swiftpm = await readTopLevelManifestFields({ workspacePath: tmpDir, filename: "Package.swift" });
+
+    expect(pyproject.ok).toBe(true);
+    if (pyproject.ok) {
+      expect(pyproject.manifest.fields.name).toBe("demo-py");
+      expect(pyproject.manifest.fields.dependencies).toContain("fastapi");
+    }
+    expect(cargo.ok).toBe(true);
+    if (cargo.ok) {
+      expect(cargo.manifest.fields.dependencies).toContain("serde");
+    }
+    expect(gomod.ok).toBe(true);
+    if (gomod.ok) {
+      expect(gomod.manifest.fields.moduleName).toBe("example.com/demo");
+      expect(gomod.manifest.fields.dependencies).toContain("github.com/gin-gonic/gin");
+      expect(gomod.manifest.fields.notes).toContain("replace directives present; paths not shown");
+      expect(gomod.manifest.bytesRead).toBeLessThanOrEqual(16384);
+    }
+    expect(swiftpm.ok).toBe(true);
+    if (swiftpm.ok) {
+      expect(swiftpm.manifest.fields.name).toBe("PaperclipDesktop");
+      expect(swiftpm.manifest.fields.products).toContain("PaperclipDesktop");
+      expect(swiftpm.manifest.fields.targets).toContain("PaperclipDesktop");
+      expect(swiftpm.manifest.fields.platforms).toContain("macOS");
+    }
+  });
+
+  it("rejects invalid package.json safely", async () => {
+    await fs.writeFile(path.join(tmpDir, "package.json"), "{ invalid json");
+
+    const result = await readTopLevelManifestFields({
+      workspacePath: tmpDir,
+      filename: "package.json",
+    });
+
+    expect(result.ok).toBe(false);
   });
 });

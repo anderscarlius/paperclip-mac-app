@@ -99,3 +99,9 @@ Change: Polished the first-user Analyze Workspace journey with a flow step model
 Expected effect: Make the private alpha easier to demo by showing where the user is in the flow, what happened, what did not happen, and what the safe next actions are.
 Observed result: Setup Health now presents a coherent step-by-step Analyze Workspace experience with stronger safety framing, a visible `What’s next?` section, and internal docs that explain current alpha readiness and how to demo it.
 Next action: Run focused tests and typechecks, then review the diff, commit, and push Phase 5M.
+
+Time: 2026-05-08T13:40:46+0200
+Change: Added an approved manifest field reader, a server-side selected-field extractor for supported top-level manifests, and UI/result updates that transparently incorporate manifest evidence.
+Expected effect: Make the first Paperclip summary more useful without weakening the current trust model by reading only allowlisted manifest fields after explicit approval.
+Observed result: Paperclip can now read selected fields from `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, and `Package.swift`, reflect those reads in `filesRead`, and improve the first summary without using AI or running commands.
+Next action: Run focused tests and typechecks, then review the diff, commit, and push Phase 5N.

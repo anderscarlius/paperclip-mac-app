@@ -358,6 +358,75 @@ export type AnalyzeWorkspaceReadmeExcerpt = {
   };
 };
 
+export type AnalyzeWorkspaceManifestKind =
+  | "package_json"
+  | "pyproject_toml"
+  | "cargo_toml"
+  | "go_mod"
+  | "package_swift";
+
+export type AnalyzeWorkspaceManifestFieldRequest = {
+  schemaVersion: 1;
+  requestType: "analyze_workspace_manifest_fields";
+  workspace: {
+    path: string;
+    displayName?: string | null;
+  };
+  candidate: {
+    filename: string;
+    kind: AnalyzeWorkspaceManifestKind;
+  };
+  limits: {
+    maxBytes: number;
+    recursive: false;
+    followSymlinks: false;
+  };
+  safety: {
+    readOnly: true;
+    allowFileWrites: false;
+    allowCommandExecution: false;
+    allowNetworkAccess: false;
+    allowAI: false;
+  };
+};
+
+export type AnalyzeWorkspaceManifestFields = {
+  schemaVersion: 1;
+  fieldsType: "analyze_workspace_manifest_fields";
+  filename: string;
+  kind: AnalyzeWorkspaceManifestKind;
+  bytesRead: number;
+  truncated: boolean;
+  confidence: "high" | "medium" | "low";
+  fields: {
+    name?: string;
+    version?: string;
+    description?: string;
+    moduleName?: string;
+    language?: string;
+    packageManagerHints?: string[];
+    frameworkHints?: string[];
+    scripts?: string[];
+    dependencies?: string[];
+    devDependencies?: string[];
+    targets?: string[];
+    products?: string[];
+    platforms?: string[];
+    buildBackend?: string;
+    notes?: string[];
+  };
+  omitted: string[];
+  safety: {
+    readOnly: true;
+    filesChanged: false;
+    commandsRun: false;
+    networkAccessed: false;
+    aiUsed: false;
+    recursiveScan: false;
+    followedSymlink: false;
+  };
+};
+
 export type AnalyzeWorkspaceFlowStepId =
   | "setup_health"
   | "confirm_read_only"
@@ -365,6 +434,7 @@ export type AnalyzeWorkspaceFlowStepId =
   | "metadata_collected"
   | "first_summary"
   | "readme_excerpt"
+  | "manifest_fields"
   | "improved_summary";
 
 export type AnalyzeWorkspaceFlowStep = {
@@ -504,6 +574,20 @@ const READ_ME_CANDIDATE_ORDER = [
   "readme",
   "readme.txt",
 ] as const;
+const MANIFEST_CANDIDATE_ORDER = [
+  "package.json",
+  "pyproject.toml",
+  "Cargo.toml",
+  "go.mod",
+  "Package.swift",
+] as const;
+const MANIFEST_KIND_BY_FILENAME = new Map<string, AnalyzeWorkspaceManifestKind>([
+  ["package.json", "package_json"],
+  ["pyproject.toml", "pyproject_toml"],
+  ["Cargo.toml", "cargo_toml"],
+  ["go.mod", "go_mod"],
+  ["Package.swift", "package_swift"],
+]);
 const JS_PACKAGE_MANAGER_NAMES = new Map<string, string>([
   ["pnpm-lock.yaml", "pnpm"],
   ["package-lock.json", "npm"],
@@ -516,6 +600,19 @@ const OTHER_PACKAGE_MANAGER_NAMES = new Map<string, string>([
   ["go.mod", "Go modules"],
   ["gemfile.lock", "Bundler"],
   ["composer.lock", "Composer"],
+]);
+const MANIFEST_FRAMEWORK_HINT_MAP = new Map<string, string>([
+  ["react", "React"],
+  ["next", "Next.js"],
+  ["vite", "Vite"],
+  ["vue", "Vue"],
+  ["svelte", "Svelte"],
+  ["@angular/core", "Angular"],
+  ["express", "Express"],
+  ["fastify", "Fastify"],
+  ["vitest", "Vitest"],
+  ["jest", "Jest"],
+  ["typescript", "TypeScript"],
 ]);
 const NOT_INSPECTED_ITEMS = [
   "File contents",
@@ -832,6 +929,23 @@ export function isAllowedReadmeFilename(name: string): boolean {
   return READ_ME_CANDIDATE_ORDER.includes(trimmed as (typeof READ_ME_CANDIDATE_ORDER)[number]);
 }
 
+export function isAllowedManifestFilename(name: string): boolean {
+  if (typeof name !== "string") return false;
+  const trimmed = name.trim();
+  if (trimmed.length === 0) return false;
+  if (trimmed.includes("/") || trimmed.includes("\\") || trimmed.includes("\0") || trimmed.includes("..")) {
+    return false;
+  }
+  if (isSensitiveWorkspaceEntryName(trimmed)) return false;
+  return MANIFEST_KIND_BY_FILENAME.has(trimmed);
+}
+
+export function manifestKindForFilename(
+  name: string,
+): AnalyzeWorkspaceManifestKind | null {
+  return MANIFEST_KIND_BY_FILENAME.get(name.trim()) ?? null;
+}
+
 export function classifyManifestIndicator(
   name: string,
 ): AnalyzeWorkspaceManifestIndicator | null {
@@ -858,6 +972,23 @@ export function findReadmeCandidatesFromSnapshot(
   return READ_ME_CANDIDATE_ORDER.filter((candidate) =>
     topLevelNames.has(candidate) && isAllowedReadmeFilename(candidate),
   );
+}
+
+export function findManifestCandidatesFromSnapshot(
+  snapshot: AnalyzeWorkspaceMetadataSnapshot,
+): Array<{ filename: string; kind: AnalyzeWorkspaceManifestKind }> {
+  const topLevelNames = new Set(
+    snapshot.topLevelEntries
+      .filter((entry) => entry.redacted !== true)
+      .map((entry) => entry.name),
+  );
+
+  return MANIFEST_CANDIDATE_ORDER
+    .filter((candidate) => topLevelNames.has(candidate) && isAllowedManifestFilename(candidate))
+    .map((filename) => ({
+      filename,
+      kind: manifestKindForFilename(filename)!,
+    }));
 }
 
 export function buildReadmeExcerptRequest(input: {
@@ -894,6 +1025,42 @@ export function buildReadmeExcerptRequest(input: {
   };
 }
 
+export function buildManifestFieldRequest(input: {
+  workspacePath: string;
+  displayName?: string | null;
+  filename: string;
+  maxBytes?: number;
+}): AnalyzeWorkspaceManifestFieldRequest | null {
+  const workspacePath = input.workspacePath.trim();
+  const kind = manifestKindForFilename(input.filename);
+  if (!workspacePath || !kind || !isAllowedManifestFilename(input.filename)) return null;
+
+  return {
+    schemaVersion: 1,
+    requestType: "analyze_workspace_manifest_fields",
+    workspace: {
+      path: workspacePath,
+      displayName: input.displayName ?? null,
+    },
+    candidate: {
+      filename: input.filename,
+      kind,
+    },
+    limits: {
+      maxBytes: Math.min(input.maxBytes ?? 16384, 16384),
+      recursive: false,
+      followSymlinks: false,
+    },
+    safety: {
+      readOnly: true,
+      allowFileWrites: false,
+      allowCommandExecution: false,
+      allowNetworkAccess: false,
+      allowAI: false,
+    },
+  };
+}
+
 export function buildAnalyzeWorkspaceFlowSteps(input: {
   confirmationOpen: boolean;
   requestPrepared: boolean;
@@ -901,6 +1068,8 @@ export function buildAnalyzeWorkspaceFlowSteps(input: {
   firstResultAvailable: boolean;
   readmeCandidateAvailable: boolean;
   readmeExcerptRead: boolean;
+  manifestCandidateAvailable: boolean;
+  manifestFieldsRead: boolean;
 }): AnalyzeWorkspaceFlowStep[] {
   const {
     confirmationOpen,
@@ -909,6 +1078,8 @@ export function buildAnalyzeWorkspaceFlowSteps(input: {
     firstResultAvailable,
     readmeCandidateAvailable,
     readmeExcerptRead,
+    manifestCandidateAvailable,
+    manifestFieldsRead,
   } = input;
 
   return [
@@ -975,10 +1146,24 @@ export function buildAnalyzeWorkspaceFlowSteps(input: {
         : "No top-level README candidate was found for the optional deeper read.",
     },
     {
+      id: "manifest_fields",
+      label: "Manifest fields",
+      status: manifestFieldsRead
+        ? "complete"
+        : manifestCandidateAvailable
+          ? firstResultAvailable
+            ? "optional"
+            : "not_started"
+          : "disabled",
+      description: manifestCandidateAvailable
+        ? "An optional top-level manifest read can extract selected safe fields."
+        : "No supported top-level manifest candidate was found for the optional deeper read.",
+    },
+    {
       id: "improved_summary",
       label: "Improved summary",
-      status: readmeExcerptRead ? "current" : "not_started",
-      description: "The summary is updated after one approved README excerpt is read.",
+      status: readmeExcerptRead || manifestFieldsRead ? "current" : "not_started",
+      description: "The summary is updated after approved README or manifest reads.",
     },
   ];
 }
@@ -1182,7 +1367,10 @@ function pushUnique(values: string[], nextValue: string) {
   }
 }
 
-function detectLanguages(snapshot: AnalyzeWorkspaceMetadataSnapshot): string[] {
+function detectLanguages(
+  snapshot: AnalyzeWorkspaceMetadataSnapshot,
+  manifestFields?: AnalyzeWorkspaceManifestFields | null,
+): string[] {
   const languages: string[] = [];
   const indicatorNames = new Set(
     snapshot.manifestIndicators.map((indicator) => normalizeWorkspaceEntryName(indicator.name)),
@@ -1220,11 +1408,22 @@ function detectLanguages(snapshot: AnalyzeWorkspaceMetadataSnapshot): string[] {
   if (indicatorNames.has("composer.json") || indicatorNames.has("composer.lock")) {
     pushUnique(languages, "PHP");
   }
+  if (manifestFields?.fields.language) {
+    pushUnique(languages, manifestFields.fields.language);
+  }
+  if (manifestFields?.kind === "package_json" && hasTopLevelEntry(snapshot, "tsconfig.json")) {
+    const jsIndex = languages.indexOf("JavaScript");
+    if (jsIndex >= 0) languages[jsIndex] = "TypeScript";
+    else pushUnique(languages, "TypeScript");
+  }
 
   return languages;
 }
 
-function detectFrameworks(snapshot: AnalyzeWorkspaceMetadataSnapshot): string[] {
+function detectFrameworks(
+  snapshot: AnalyzeWorkspaceMetadataSnapshot,
+  manifestFields?: AnalyzeWorkspaceManifestFields | null,
+): string[] {
   const frameworks: string[] = [];
   if (hasTopLevelEntry(snapshot, ...Array.from(NEXT_CONFIG_NAMES))) {
     frameworks.push("Next.js");
@@ -1232,10 +1431,16 @@ function detectFrameworks(snapshot: AnalyzeWorkspaceMetadataSnapshot): string[] 
   if (hasTopLevelEntry(snapshot, ...Array.from(VITE_CONFIG_NAMES))) {
     frameworks.push("Vite");
   }
+  for (const framework of manifestFields?.fields.frameworkHints ?? []) {
+    pushUnique(frameworks, framework);
+  }
   return frameworks;
 }
 
-function detectPackageManagers(snapshot: AnalyzeWorkspaceMetadataSnapshot): string[] {
+function detectPackageManagers(
+  snapshot: AnalyzeWorkspaceMetadataSnapshot,
+  manifestFields?: AnalyzeWorkspaceManifestFields | null,
+): string[] {
   const packageManagers: string[] = [];
 
   for (const entry of snapshot.topLevelEntries) {
@@ -1246,22 +1451,40 @@ function detectPackageManagers(snapshot: AnalyzeWorkspaceMetadataSnapshot): stri
     if (jsPackageManager) pushUnique(packageManagers, jsPackageManager);
     if (otherPackageManager) pushUnique(packageManagers, otherPackageManager);
   }
+  for (const hint of manifestFields?.fields.packageManagerHints ?? []) {
+    pushUnique(packageManagers, hint);
+  }
 
   return packageManagers;
 }
 
 function buildImportantFiles(
   snapshot: AnalyzeWorkspaceMetadataSnapshot,
+  manifestFields?: AnalyzeWorkspaceManifestFields | null,
 ): AnalyzeWorkspaceResult["detected"]["importantFiles"] {
-  return snapshot.topLevelEntries.flatMap((entry) => {
+  const files = snapshot.topLevelEntries.flatMap((entry) => {
     if (entry.redacted) return [];
     const reason = IMPORTANT_FILE_REASONS.get(normalizeWorkspaceEntryName(entry.name));
     return reason ? [{ path: entry.name, reason }] : [];
   });
+  if (manifestFields && !files.some((file) => file.path === manifestFields.filename)) {
+    const reason = IMPORTANT_FILE_REASONS.get(normalizeWorkspaceEntryName(manifestFields.filename));
+    if (reason) files.push({ path: manifestFields.filename, reason });
+  }
+  return files;
 }
 
-function buildSummaryTitle(snapshot: AnalyzeWorkspaceMetadataSnapshot, languages: string[]): string {
+function buildSummaryTitle(
+  snapshot: AnalyzeWorkspaceMetadataSnapshot,
+  languages: string[],
+  manifestFields?: AnalyzeWorkspaceManifestFields | null,
+): string {
   if (languages.length > 1) return "Multi-language workspace detected";
+  if (manifestFields?.fields.name && manifestFields.fields.name.trim().length > 0) {
+    if (languages.length === 1) {
+      return `${languages[0]} workspace detected`;
+    }
+  }
 
   switch (languages[0] ?? null) {
     case "JavaScript":
@@ -1289,19 +1512,32 @@ function buildSummaryTitle(snapshot: AnalyzeWorkspaceMetadataSnapshot, languages
 function buildSummaryConfidence(
   snapshot: AnalyzeWorkspaceMetadataSnapshot,
   languages: string[],
+  manifestFields?: AnalyzeWorkspaceManifestFields | null,
 ): AnalyzeWorkspaceResultConfidence {
+  if (manifestFields?.confidence === "high") return "high";
+  if (manifestFields?.confidence === "medium") return "medium";
   if (languages.length > 0 || snapshot.manifestIndicators.some((indicator) => indicator.category === "readme")) {
     return "medium";
   }
   return "low";
 }
 
-function buildSetupWarnings(snapshot: AnalyzeWorkspaceMetadataSnapshot): AnalyzeWorkspaceResult["setupWarnings"] {
+function buildSetupWarnings(
+  snapshot: AnalyzeWorkspaceMetadataSnapshot,
+  options?: {
+    readmeWasRead?: boolean;
+    manifestFields?: AnalyzeWorkspaceManifestFields | null;
+  },
+): AnalyzeWorkspaceResult["setupWarnings"] {
+  const manifestFields = options?.manifestFields ?? null;
+  const readmeWasRead = options?.readmeWasRead === true;
   const warnings: AnalyzeWorkspaceResult["setupWarnings"] = [
     {
       severity: "info",
-      title: "Metadata-only result",
-      message: "This first result is based only on top-level filenames and directory names.",
+      title: manifestFields || readmeWasRead ? "Limited approved reads" : "Metadata-only result",
+      message: manifestFields || readmeWasRead
+        ? "This result is based on top-level metadata plus explicitly approved file reads."
+        : "This first result is based only on top-level filenames and directory names.",
       action: "Collect deeper approved metadata later",
     },
   ];
@@ -1324,11 +1560,21 @@ function buildSetupWarnings(snapshot: AnalyzeWorkspaceMetadataSnapshot): Analyze
     });
   }
 
+  if (manifestFields) {
+    warnings.push({
+      severity: "info",
+      title: "Selected manifest fields read",
+      message: "Paperclip read selected safe fields from the top-level manifest file. It did not expose raw manifest content.",
+      action: "Review extracted fields before deeper analysis",
+    });
+  }
+
   return warnings;
 }
 
 function buildSuggestedNextActions(
   snapshot: AnalyzeWorkspaceMetadataSnapshot,
+  manifestFields?: AnalyzeWorkspaceManifestFields | null,
 ): AnalyzeWorkspaceResult["suggestedNextActions"] {
   const actions: AnalyzeWorkspaceResult["suggestedNextActions"] = [
     {
@@ -1352,6 +1598,7 @@ function buildSuggestedNextActions(
     snapshot.manifestIndicators.some((indicator) =>
       ["javascript", "swift", "python", "rust", "go", "ruby", "php"].includes(indicator.category),
     )
+    && !manifestFields
   ) {
     actions.push({
       label: "Inspect project manifest safely",
@@ -1399,22 +1646,80 @@ function extractReadmeHeading(readmeExcerpt: AnalyzeWorkspaceReadmeExcerpt | nul
   return heading && heading.length > 0 ? heading : null;
 }
 
+function buildManifestSummarySnippet(
+  manifestFields: AnalyzeWorkspaceManifestFields | null | undefined,
+): string | null {
+  if (!manifestFields) return null;
+
+  const details: string[] = [];
+  if (manifestFields.fields.name) details.push(`manifest name "${manifestFields.fields.name}"`);
+  if (manifestFields.fields.description) details.push("a project description");
+  if ((manifestFields.fields.frameworkHints?.length ?? 0) > 0) {
+    details.push(`framework hints such as ${manifestFields.fields.frameworkHints!.slice(0, 2).join(" and ")}`);
+  }
+  if ((manifestFields.fields.dependencies?.length ?? 0) > 0) {
+    details.push(`dependency names from ${manifestFields.filename}`);
+  }
+  if ((manifestFields.fields.targets?.length ?? 0) > 0) {
+    details.push(`target names from ${manifestFields.filename}`);
+  }
+
+  if (details.length === 0) {
+    return `Paperclip read selected safe fields from ${manifestFields.filename}.`;
+  }
+
+  return `Paperclip read selected safe fields from ${manifestFields.filename}, including ${details.slice(0, 2).join(" and ")}.`;
+}
+
 export function buildAnalyzeWorkspaceResultFromMetadata(input: {
   request: AnalyzeWorkspaceRequest;
   snapshot: AnalyzeWorkspaceMetadataSnapshot;
   readmeExcerpt?: AnalyzeWorkspaceReadmeExcerpt | null;
+  manifestFields?: AnalyzeWorkspaceManifestFields | null;
 }): AnalyzeWorkspaceResult {
-  const languages = detectLanguages(input.snapshot);
-  const frameworks = detectFrameworks(input.snapshot);
-  const packageManagers = detectPackageManagers(input.snapshot);
-  const importantFiles = buildImportantFiles(input.snapshot);
+  const languages = detectLanguages(input.snapshot, input.manifestFields);
+  const frameworks = detectFrameworks(input.snapshot, input.manifestFields);
+  const packageManagers = detectPackageManagers(input.snapshot, input.manifestFields);
+  const importantFiles = buildImportantFiles(input.snapshot, input.manifestFields);
   const readmeHeading = extractReadmeHeading(input.readmeExcerpt);
   const readmeWasRead = Boolean(input.readmeExcerpt);
-  const summaryDescription = readmeWasRead
+  const manifestWasRead = Boolean(input.manifestFields);
+  const manifestSnippet = buildManifestSummarySnippet(input.manifestFields);
+  const summaryDescription = readmeWasRead && manifestWasRead
     ? readmeHeading
-      ? `Paperclip inspected limited top-level metadata and one approved README excerpt. README heading suggests this project is called "${readmeHeading}", but deeper project details still need approved reads or AI later.`
-      : "Paperclip inspected limited top-level metadata and one approved README excerpt. It used that excerpt only as a cautious documentation signal and did not run commands or use AI."
-    : "Paperclip inspected limited top-level metadata for this workspace. It detected common project indicators but did not read file contents or run commands.";
+      ? `Paperclip inspected limited top-level metadata, one approved README excerpt, and selected safe manifest fields. README heading suggests this project is called "${readmeHeading}". ${manifestSnippet ?? ""} It did not run commands or use AI.`.trim()
+      : `Paperclip inspected limited top-level metadata, one approved README excerpt, and selected safe manifest fields. ${manifestSnippet ?? ""} It did not run commands or use AI.`.trim()
+    : readmeWasRead
+      ? readmeHeading
+        ? `Paperclip inspected limited top-level metadata and one approved README excerpt. README heading suggests this project is called "${readmeHeading}", but deeper project details still need approved reads or AI later.`
+        : "Paperclip inspected limited top-level metadata and one approved README excerpt. It used that excerpt only as a cautious documentation signal and did not run commands or use AI."
+      : manifestWasRead
+        ? `Paperclip inspected limited top-level metadata and selected safe manifest fields. ${manifestSnippet ?? ""} It did not run commands or use AI.`.trim()
+        : "Paperclip inspected limited top-level metadata for this workspace. It detected common project indicators but did not read file contents or run commands.";
+  const filesRead = [
+    ...(input.readmeExcerpt ? [input.readmeExcerpt.filename] : []),
+    ...(input.manifestFields ? [input.manifestFields.filename] : []),
+  ];
+  const contentReads = [
+    ...(input.readmeExcerpt
+      ? [{
+        path: input.readmeExcerpt.filename,
+        maxBytes: 4096,
+        bytesRead: input.readmeExcerpt.bytesRead,
+        truncated: input.readmeExcerpt.truncated,
+        approved: true as const,
+      }]
+      : []),
+    ...(input.manifestFields
+      ? [{
+        path: input.manifestFields.filename,
+        maxBytes: 16384,
+        bytesRead: input.manifestFields.bytesRead,
+        truncated: input.manifestFields.truncated,
+        approved: true as const,
+      }]
+      : []),
+  ];
 
   return {
     schemaVersion: 1,
@@ -1426,9 +1731,9 @@ export function buildAnalyzeWorkspaceResultFromMetadata(input: {
       pathHealth: input.snapshot.workspace.pathHealth ?? input.request.workspace.pathHealth ?? null,
     },
     summary: {
-      title: buildSummaryTitle(input.snapshot, languages),
+      title: buildSummaryTitle(input.snapshot, languages, input.manifestFields),
       description: summaryDescription,
-      confidence: buildSummaryConfidence(input.snapshot, languages),
+      confidence: buildSummaryConfidence(input.snapshot, languages, input.manifestFields),
     },
     detected: {
       languages,
@@ -1436,11 +1741,14 @@ export function buildAnalyzeWorkspaceResultFromMetadata(input: {
       packageManagers,
       importantFiles,
     },
-    setupWarnings: buildSetupWarnings(input.snapshot),
-    suggestedNextActions: buildSuggestedNextActions(input.snapshot),
+    setupWarnings: buildSetupWarnings(input.snapshot, {
+      readmeWasRead,
+      manifestFields: input.manifestFields,
+    }),
+    suggestedNextActions: buildSuggestedNextActions(input.snapshot, input.manifestFields),
     inspected: {
       filesListed: input.snapshot.topLevelEntries.map((entry) => entry.name),
-      filesRead: input.readmeExcerpt ? [input.readmeExcerpt.filename] : [],
+      filesRead,
       commandsRun: [],
     },
     notInspected: [...NOT_INSPECTED_ITEMS],
@@ -1448,22 +1756,14 @@ export function buildAnalyzeWorkspaceResultFromMetadata(input: {
       readOnly: true,
       filesChanged: false,
       commandsRun: false,
-      fileContentsRead: readmeWasRead,
+      fileContentsRead: filesRead.length > 0,
       recursiveScan: false,
       aiUsed: false,
       agentStarted: false,
       localFallbackUsed: false,
       automaticRoutingUsed: false,
     },
-    contentReads: input.readmeExcerpt
-      ? [{
-        path: input.readmeExcerpt.filename,
-        maxBytes: 4096,
-        bytesRead: input.readmeExcerpt.bytesRead,
-        truncated: input.readmeExcerpt.truncated,
-        approved: true,
-      }]
-      : [],
+    contentReads,
   };
 }
 
@@ -2117,6 +2417,12 @@ export const mockSetupHealthStates = [
   {
     id: "ready_no_readme",
     label: "Ready (No README)",
+    diagnostics: mockSetupHealthReadyDiagnostics,
+    viewModel: mockSetupHealthReady,
+  },
+  {
+    id: "ready_no_manifest",
+    label: "Ready (No Manifest)",
     diagnostics: mockSetupHealthReadyDiagnostics,
     viewModel: mockSetupHealthReady,
   },

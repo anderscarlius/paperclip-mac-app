@@ -11,15 +11,18 @@
 9. Show the first workspace summary.
 10. Approve the README excerpt step.
 11. Show the improved summary.
-12. Point out safety transparency.
-13. Explain what is not built yet.
-14. Ask the tester for feedback.
+12. Approve the manifest fields step.
+13. Show the more useful summary.
+14. Point out safety transparency.
+15. Explain what is not built yet.
+16. Ask the tester for feedback.
 
 ## Suggested tester feedback questions
 
 - Did you understand what Paperclip inspected?
 - Did the safety copy feel clear?
 - Did you trust the README read step?
+- Did you trust the manifest-field read step?
 - Was the first summary useful?
 - What would you expect the next button to do?
 - Would you try this on your own project?

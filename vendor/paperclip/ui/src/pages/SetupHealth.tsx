@@ -25,9 +25,11 @@ import { readLocalFallbackCandidateSignal } from "@/lib/local-fallback-offer";
 import { queryKeys } from "@/lib/queryKeys";
 import {
   buildAnalyzeWorkspaceFlowSteps,
+  buildManifestFieldRequest,
   buildAnalyzeWorkspaceResultFromMetadata,
   buildReadmeExcerptRequest,
   collectAnalyzeWorkspaceTopLevelMetadataFromProvidedEntries,
+  findManifestCandidatesFromSnapshot,
   findReadmeCandidatesFromSnapshot,
   prepareAnalyzeWorkspaceHandoff,
   buildAnalyzeWorkspaceSetupState,
@@ -37,6 +39,7 @@ import {
   setupHealthStatusLabel,
   type AnalyzeWorkspaceCollectionResult,
   type AnalyzeWorkspaceHandoffResult,
+  type AnalyzeWorkspaceManifestFields,
   type AnalyzeWorkspaceReadmeExcerpt,
   type AnalyzeWorkspaceResult,
   type AnalyzeWorkspaceResultValidationResult,
@@ -76,12 +79,107 @@ const MOCK_METADATA_ENTRIES: Record<MockStateId, Array<{ name: string; kind: "fi
     { name: "Tests", kind: "directory" },
     { name: "docs", kind: "directory" },
   ],
+  ready_no_manifest: [
+    { name: "README.md", kind: "file" },
+    { name: "docs", kind: "directory" },
+    { name: "src", kind: "directory" },
+  ],
 };
 const MOCK_README_EXCERPTS: Record<MockStateId, string | null> = {
   needs_attention: null,
   workspace_warning: "# Paperclip Demo\n\nA lightweight Mac app for safe AI workspace analysis.\n",
   ready: "# Paperclip App\n\nA Swift workspace for the Paperclip desktop application.\n",
   ready_no_readme: null,
+  ready_no_manifest: "# Manifest-free Demo\n\nA workspace without a supported top-level manifest.\n",
+};
+const MOCK_MANIFEST_FIELDS: Record<MockStateId, AnalyzeWorkspaceManifestFields | null> = {
+  needs_attention: null,
+  workspace_warning: {
+    schemaVersion: 1,
+    fieldsType: "analyze_workspace_manifest_fields",
+    filename: "package.json",
+    kind: "package_json",
+    bytesRead: 312,
+    truncated: false,
+    confidence: "high",
+    fields: {
+      name: "paperclip-demo",
+      description: "A lightweight Mac app for safe AI workspace analysis.",
+      language: "JavaScript",
+      packageManagerHints: ["npm-compatible"],
+      frameworkHints: ["React", "Vite"],
+      scripts: ["dev", "build", "test"],
+      dependencies: ["react", "vite"],
+      devDependencies: ["typescript", "vitest"],
+    },
+    omitted: ["script command values", "dependency versions", "raw manifest content"],
+    safety: {
+      readOnly: true,
+      filesChanged: false,
+      commandsRun: false,
+      networkAccessed: false,
+      aiUsed: false,
+      recursiveScan: false,
+      followedSymlink: false,
+    },
+  },
+  ready: {
+    schemaVersion: 1,
+    fieldsType: "analyze_workspace_manifest_fields",
+    filename: "Package.swift",
+    kind: "package_swift",
+    bytesRead: 524,
+    truncated: false,
+    confidence: "medium",
+    fields: {
+      name: "PaperclipDesktop",
+      language: "Swift",
+      packageManagerHints: ["SwiftPM"],
+      dependencies: ["github.com/apple/swift-argument-parser"],
+      targets: ["PaperclipDesktop"],
+      products: ["PaperclipDesktop"],
+      platforms: ["macOS"],
+      notes: ["Dependency URLs are summarized as host/repo only."],
+    },
+    omitted: ["raw manifest content", "executable Swift evaluation"],
+    safety: {
+      readOnly: true,
+      filesChanged: false,
+      commandsRun: false,
+      networkAccessed: false,
+      aiUsed: false,
+      recursiveScan: false,
+      followedSymlink: false,
+    },
+  },
+  ready_no_readme: {
+    schemaVersion: 1,
+    fieldsType: "analyze_workspace_manifest_fields",
+    filename: "Package.swift",
+    kind: "package_swift",
+    bytesRead: 524,
+    truncated: false,
+    confidence: "medium",
+    fields: {
+      name: "PaperclipDesktop",
+      language: "Swift",
+      packageManagerHints: ["SwiftPM"],
+      targets: ["PaperclipDesktop"],
+      products: ["PaperclipDesktop"],
+      platforms: ["macOS"],
+    },
+    omitted: ["raw manifest content", "executable Swift evaluation"],
+    safety: {
+      readOnly: true,
+      filesChanged: false,
+      commandsRun: false,
+      networkAccessed: false,
+      aiUsed: false,
+      recursiveScan: false,
+      followedSymlink: false,
+    },
+  },
+  ready_no_manifest: null,
 };
 
 function severityBadgeVariant(severity: SetupHealthSeverity): "default" | "secondary" | "outline" | "destructive" {
@@ -383,6 +481,8 @@ export function SetupHealth() {
   const [isCollectingMetadata, setIsCollectingMetadata] = useState(false);
   const [readmeExcerpt, setReadmeExcerpt] = useState<AnalyzeWorkspaceReadmeExcerpt | null>(null);
   const [isReadingReadme, setIsReadingReadme] = useState(false);
+  const [manifestFields, setManifestFields] = useState<AnalyzeWorkspaceManifestFields | null>(null);
+  const [isReadingManifest, setIsReadingManifest] = useState(false);
 
   const { data: health, isLoading: isHealthLoading } = useQuery({
     queryKey: queryKeys.health,
@@ -425,14 +525,19 @@ export function SetupHealth() {
       request: analyzeSetupState.request,
       snapshot: metadataCollectionResult.snapshot,
       readmeExcerpt,
+      manifestFields,
     });
-  }, [analyzeSetupState.request, metadataCollectionResult, readmeExcerpt]);
+  }, [analyzeSetupState.request, manifestFields, metadataCollectionResult, readmeExcerpt]);
   const firstWorkspaceResultValidation = useMemo<AnalyzeWorkspaceResultValidationResult | null>(() => {
     if (!firstWorkspaceResult) return null;
     return validateAnalyzeWorkspaceResult(firstWorkspaceResult);
   }, [firstWorkspaceResult]);
   const readmeCandidates = useMemo(
     () => metadataCollectionResult?.ok ? findReadmeCandidatesFromSnapshot(metadataCollectionResult.snapshot) : [],
+    [metadataCollectionResult],
+  );
+  const manifestCandidates = useMemo(
+    () => metadataCollectionResult?.ok ? findManifestCandidatesFromSnapshot(metadataCollectionResult.snapshot) : [],
     [metadataCollectionResult],
   );
   const analyzeFlowSteps = useMemo(
@@ -443,9 +548,41 @@ export function SetupHealth() {
       firstResultAvailable: firstWorkspaceResult !== null,
       readmeCandidateAvailable: readmeCandidates.length > 0,
       readmeExcerptRead: readmeExcerpt !== null,
+      manifestCandidateAvailable: manifestCandidates.length > 0,
+      manifestFieldsRead: manifestFields !== null,
     }),
-    [analyzeFlowState, firstWorkspaceResult, metadataCollectionResult, readmeCandidates.length, readmeExcerpt],
+    [analyzeFlowState, firstWorkspaceResult, manifestCandidates.length, manifestFields, metadataCollectionResult, readmeCandidates.length, readmeExcerpt],
   );
+  const summaryModeCopy = useMemo(() => {
+    if (readmeExcerpt && manifestFields) {
+      return "This result uses limited top-level metadata, one approved README excerpt, and approved manifest fields.";
+    }
+    if (manifestFields) {
+      return "This result uses limited metadata and approved manifest fields.";
+    }
+    if (readmeExcerpt) {
+      return "This result uses limited top-level metadata and one approved README excerpt.";
+    }
+    return "This first result is based only on limited top-level metadata.";
+  }, [manifestFields, readmeExcerpt]);
+  const approvedReadCopy = useMemo(() => {
+    const reads: string[] = [];
+    if (readmeExcerpt) reads.push(`${readmeExcerpt.filename}, up to 4 KB`);
+    if (manifestFields) reads.push(`${manifestFields.filename} selected fields, up to 16 KB`);
+    return reads;
+  }, [manifestFields, readmeExcerpt]);
+  const approvedReadStatusCopy = useMemo(() => {
+    if (readmeExcerpt && manifestFields) {
+      return "A small approved README excerpt and selected manifest fields were read.";
+    }
+    if (manifestFields) {
+      return "Selected manifest fields were read.";
+    }
+    if (readmeExcerpt) {
+      return "A small approved README excerpt was read.";
+    }
+    return "No file contents were read.";
+  }, [manifestFields, readmeExcerpt]);
 
   const sourceNote = useMemo(() => {
     if (viewMode === "mock") {
@@ -494,6 +631,7 @@ export function SetupHealth() {
     setIsCollectingMetadata(true);
     setSelectedActionMessage(null);
     setReadmeExcerpt(null);
+    setManifestFields(null);
     try {
       let result: AnalyzeWorkspaceCollectionResult;
       let previewSource: MetadataPreviewSource;
@@ -616,6 +754,60 @@ export function SetupHealth() {
     }
   }
 
+  async function handleReadManifestFields() {
+    if (!analyzeSetupState.request || !metadataCollectionResult?.ok) return;
+    const candidate = manifestCandidates[0];
+    if (!candidate) {
+      setSelectedActionMessage("No supported top-level manifest candidate was found.");
+      return;
+    }
+
+    const manifestRequest = buildManifestFieldRequest({
+      workspacePath: analyzeSetupState.request.workspace.path,
+      displayName: analyzeSetupState.request.workspace.displayName ?? null,
+      filename: candidate.filename,
+      maxBytes: 16384,
+    });
+    if (!manifestRequest) {
+      setSelectedActionMessage("Manifest field request could not be prepared safely.");
+      return;
+    }
+
+    setIsReadingManifest(true);
+    setSelectedActionMessage(null);
+
+    try {
+      if (viewMode === "mock") {
+        const mockManifest = MOCK_MANIFEST_FIELDS[selectedState];
+        if (!mockManifest) {
+          setSelectedActionMessage("No supported top-level manifest candidate was found.");
+          return;
+        }
+        setManifestFields(mockManifest);
+        return;
+      }
+
+      const response = await analyzeWorkspaceApi.manifestFields({
+        workspacePath: manifestRequest.workspace.path,
+        filename: manifestRequest.candidate.filename,
+        maxBytes: manifestRequest.limits.maxBytes,
+      });
+      if (!response.ok) {
+        setSelectedActionMessage(response.error);
+        return;
+      }
+      setManifestFields(response.manifest);
+    } catch (error) {
+      setSelectedActionMessage(
+        error instanceof Error
+          ? `Manifest fields could not be read safely: ${error.message}`
+          : "Manifest fields could not be read safely.",
+      );
+    } finally {
+      setIsReadingManifest(false);
+    }
+  }
+
   function handleAction(label: string) {
     if (label === "Analyze this workspace") {
       if (viewModel.primaryAction.disabled) return;
@@ -624,6 +816,7 @@ export function SetupHealth() {
       setMetadataCollectionResult(null);
       setMetadataPreviewSource(null);
       setReadmeExcerpt(null);
+      setManifestFields(null);
       return;
     }
 
@@ -639,6 +832,7 @@ export function SetupHealth() {
       setMetadataCollectionResult(null);
       setMetadataPreviewSource(null);
       setReadmeExcerpt(null);
+      setManifestFields(null);
       return;
     }
 
@@ -965,7 +1159,12 @@ export function SetupHealth() {
                 </div>
 
                 <div className="rounded-md border border-border/70 bg-background/80 px-3 py-3 text-sm text-muted-foreground">
-                  <div>{readmeExcerpt ? "One approved README excerpt was read." : "No file contents were read."}</div>
+                  <div>{approvedReadStatusCopy}</div>
+                  {approvedReadCopy.length > 0 ? (
+                    <div className="mt-1">
+                      Approved file reads: {approvedReadCopy.join(" | ")}
+                    </div>
+                  ) : null}
                   <div>No commands were run.</div>
                   <div>No recursive scan was performed.</div>
                   <div>Secrets were not read.</div>
@@ -975,10 +1174,10 @@ export function SetupHealth() {
                   ) : null}
                 </div>
 
-                {metadataCollectionResult.warnings.filter((warning) => !readmeExcerpt || warning !== "No file contents were read.").length > 0 ? (
+                {metadataCollectionResult.warnings.filter((warning) => approvedReadCopy.length === 0 || warning !== "No file contents were read.").length > 0 ? (
                   <div className="space-y-2">
                     {metadataCollectionResult.warnings
-                      .filter((warning) => !readmeExcerpt || warning !== "No file contents were read.")
+                      .filter((warning) => approvedReadCopy.length === 0 || warning !== "No file contents were read.")
                       .map((warning) => (
                       <div
                         key={warning}
@@ -1026,16 +1225,11 @@ export function SetupHealth() {
                             ? "Example only"
                             : "Based on limited read-only metadata"}
                         </div>
-                        <div className="mt-2">
-                          {readmeExcerpt
-                            ? "This result uses limited top-level metadata and one approved README excerpt."
-                            : "This first result is based only on limited top-level metadata."}
-                        </div>
-                        <div>
-                          {readmeExcerpt
-                            ? "A small approved README excerpt was read."
-                            : "No file contents were read."}
-                        </div>
+                        <div className="mt-2">{summaryModeCopy}</div>
+                        <div>{approvedReadStatusCopy}</div>
+                        {approvedReadCopy.length > 0 ? (
+                          <div>Approved file reads: {approvedReadCopy.join(" | ")}</div>
+                        ) : null}
                         <div>No commands were run.</div>
                         <div>No AI was used.</div>
                         <div>No recursive scan was performed.</div>
@@ -1198,11 +1392,57 @@ export function SetupHealth() {
                           </div>
 
                           <div className="rounded-md border border-border/70 bg-background/70 px-3 py-3">
+                            <div className="font-medium text-foreground">Approved manifest step</div>
+                            {manifestCandidates.length > 0 ? (
+                              <div className="mt-2 space-y-2">
+                                <div>Paperclip can improve this summary by reading selected safe fields from the top-level project manifest. This is optional and read-only.</div>
+                                <div>Only selected fields will be extracted.</div>
+                                <div>Raw manifest content will not be shown by default.</div>
+                                <div>No commands will be run.</div>
+                                <div>No AI will be used.</div>
+                                <div>No other files will be opened.</div>
+                                <div>Candidate: {manifestCandidates[0].filename}</div>
+                                <Button
+                                  size="sm"
+                                  onClick={() => {
+                                    void handleReadManifestFields();
+                                  }}
+                                  disabled={isReadingManifest}
+                                >
+                                  {isReadingManifest ? "Reading manifest fields..." : "Read selected manifest fields"}
+                                </Button>
+                              </div>
+                            ) : (
+                              <div className="mt-2">No supported top-level manifest candidate was found.</div>
+                            )}
+
+                            {manifestFields ? (
+                              <div className="mt-4 space-y-2">
+                                <div className="font-medium text-foreground">Manifest fields read</div>
+                                <div>
+                                  {manifestFields.filename} · {manifestFields.bytesRead} bytes{manifestFields.truncated ? " · truncated" : ""}
+                                </div>
+                                <div>
+                                  Selected field groups extracted: {[
+                                    manifestFields.fields.name ? "name" : null,
+                                    manifestFields.fields.description ? "description" : null,
+                                    manifestFields.fields.scripts?.length ? "scripts" : null,
+                                    manifestFields.fields.dependencies?.length ? "dependencies" : null,
+                                    manifestFields.fields.targets?.length ? "targets" : null,
+                                    manifestFields.fields.products?.length ? "products" : null,
+                                    manifestFields.fields.platforms?.length ? "platforms" : null,
+                                  ].filter(Boolean).join(", ") || "basic manifest metadata"}
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+
+                          <div className="rounded-md border border-border/70 bg-background/70 px-3 py-3">
                             <div className="font-medium text-foreground">What’s next?</div>
                             <div className="mt-2 space-y-1 text-muted-foreground">
-                              <div>Read selected manifest fields — coming next</div>
                               <div>Improve summary with Cloud AI — coming later</div>
                               <div>Inspect project structure — coming later</div>
+                              <div>Inspect selected dependency details — coming later</div>
                             </div>
                           </div>
                         </div>
@@ -1247,6 +1487,7 @@ export function SetupHealth() {
                   setMetadataCollectionResult(null);
                   setMetadataPreviewSource(null);
                   setReadmeExcerpt(null);
+                  setManifestFields(null);
                 }}
               >
                 Live diagnostics
@@ -1261,6 +1502,7 @@ export function SetupHealth() {
                   setMetadataCollectionResult(null);
                   setMetadataPreviewSource(null);
                   setReadmeExcerpt(null);
+                  setManifestFields(null);
                 }}
               >
                 Mock states
@@ -1284,6 +1526,7 @@ export function SetupHealth() {
                       setMetadataCollectionResult(null);
                       setMetadataPreviewSource(null);
                       setReadmeExcerpt(null);
+                      setManifestFields(null);
                     }}
                   >
                     {state.label}

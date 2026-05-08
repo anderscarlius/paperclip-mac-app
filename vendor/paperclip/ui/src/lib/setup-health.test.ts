@@ -1,15 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
   buildAnalyzeWorkspaceFlowSteps,
+  buildManifestFieldRequest,
   buildAnalyzeWorkspaceRequest,
   buildReadmeExcerptRequest,
   buildAnalyzeWorkspaceResultFromMetadata,
   collectAnalyzeWorkspaceTopLevelMetadataFromProvidedEntries,
   buildAnalyzeWorkspaceMetadataSnapshotFromEntries,
   classifyManifestIndicator,
+  findManifestCandidatesFromSnapshot,
   findReadmeCandidatesFromSnapshot,
+  isAllowedManifestFilename,
   isAllowedReadmeFilename,
   isSensitiveWorkspaceEntryName,
+  manifestKindForFilename,
   validateAnalyzeWorkspaceResult,
   validateAnalyzeWorkspaceMetadataSnapshot,
 } from "./setup-health";
@@ -23,6 +27,8 @@ describe("setup-health flow steps", () => {
       firstResultAvailable: false,
       readmeCandidateAvailable: false,
       readmeExcerptRead: false,
+      manifestCandidateAvailable: false,
+      manifestFieldsRead: false,
     });
 
     expect(steps.find((step) => step.id === "setup_health")?.status).toBe("current");
@@ -36,6 +42,8 @@ describe("setup-health flow steps", () => {
       firstResultAvailable: false,
       readmeCandidateAvailable: false,
       readmeExcerptRead: false,
+      manifestCandidateAvailable: false,
+      manifestFieldsRead: false,
     });
 
     expect(steps.find((step) => step.id === "request_prepared")?.status).toBe("complete");
@@ -49,6 +57,8 @@ describe("setup-health flow steps", () => {
       firstResultAvailable: true,
       readmeCandidateAvailable: false,
       readmeExcerptRead: false,
+      manifestCandidateAvailable: false,
+      manifestFieldsRead: false,
     });
 
     expect(steps.find((step) => step.id === "metadata_collected")?.status).toBe("complete");
@@ -62,6 +72,8 @@ describe("setup-health flow steps", () => {
       firstResultAvailable: true,
       readmeCandidateAvailable: true,
       readmeExcerptRead: false,
+      manifestCandidateAvailable: false,
+      manifestFieldsRead: false,
     });
 
     expect(steps.find((step) => step.id === "readme_excerpt")?.status).toBe("optional");
@@ -75,6 +87,8 @@ describe("setup-health flow steps", () => {
       firstResultAvailable: true,
       readmeCandidateAvailable: false,
       readmeExcerptRead: false,
+      manifestCandidateAvailable: false,
+      manifestFieldsRead: false,
     });
 
     expect(steps.find((step) => step.id === "readme_excerpt")?.status).toBe("disabled");
@@ -88,9 +102,12 @@ describe("setup-health flow steps", () => {
       firstResultAvailable: true,
       readmeCandidateAvailable: true,
       readmeExcerptRead: true,
+      manifestCandidateAvailable: true,
+      manifestFieldsRead: true,
     });
 
     expect(steps.find((step) => step.id === "readme_excerpt")?.status).toBe("complete");
+    expect(steps.find((step) => step.id === "manifest_fields")?.status).toBe("complete");
     expect(steps.find((step) => step.id === "improved_summary")?.status).toBe("current");
   });
 });
@@ -138,6 +155,56 @@ describe("setup-health metadata snapshot helpers", () => {
 
   it("rejects README.secret as an allowed README filename", () => {
     expect(isAllowedReadmeFilename("README.secret")).toBe(false);
+  });
+
+  it("accepts package.json as an allowed manifest filename", () => {
+    expect(isAllowedManifestFilename("package.json")).toBe(true);
+  });
+
+  it("accepts pyproject.toml as an allowed manifest filename", () => {
+    expect(isAllowedManifestFilename("pyproject.toml")).toBe(true);
+  });
+
+  it("accepts Cargo.toml as an allowed manifest filename", () => {
+    expect(isAllowedManifestFilename("Cargo.toml")).toBe(true);
+  });
+
+  it("accepts go.mod as an allowed manifest filename", () => {
+    expect(isAllowedManifestFilename("go.mod")).toBe(true);
+  });
+
+  it("accepts Package.swift as an allowed manifest filename", () => {
+    expect(isAllowedManifestFilename("Package.swift")).toBe(true);
+  });
+
+  it("rejects ../package.json as an allowed manifest filename", () => {
+    expect(isAllowedManifestFilename("../package.json")).toBe(false);
+  });
+
+  it("rejects src/package.json as an allowed manifest filename", () => {
+    expect(isAllowedManifestFilename("src/package.json")).toBe(false);
+  });
+
+  it("rejects package.json.bak as an allowed manifest filename", () => {
+    expect(isAllowedManifestFilename("package.json.bak")).toBe(false);
+  });
+
+  it("rejects .env as an allowed manifest filename", () => {
+    expect(isAllowedManifestFilename(".env")).toBe(false);
+  });
+
+  it("rejects lockfiles as allowed manifest filenames", () => {
+    expect(isAllowedManifestFilename("package-lock.json")).toBe(false);
+    expect(isAllowedManifestFilename("pnpm-lock.yaml")).toBe(false);
+    expect(isAllowedManifestFilename("Cargo.lock")).toBe(false);
+  });
+
+  it("maps manifest kinds from allowed filenames", () => {
+    expect(manifestKindForFilename("package.json")).toBe("package_json");
+    expect(manifestKindForFilename("pyproject.toml")).toBe("pyproject_toml");
+    expect(manifestKindForFilename("Cargo.toml")).toBe("cargo_toml");
+    expect(manifestKindForFilename("go.mod")).toBe("go_mod");
+    expect(manifestKindForFilename("Package.swift")).toBe("package_swift");
   });
 
   it("classifies package.json as a javascript manifest indicator", () => {
@@ -393,6 +460,35 @@ describe("setup-health metadata snapshot helpers", () => {
     expect(findReadmeCandidatesFromSnapshot(snapshot)).toEqual([]);
   });
 
+  it("finds supported top-level manifest candidates in stable ordering", () => {
+    const snapshot = buildAnalyzeWorkspaceMetadataSnapshotFromEntries({
+      entries: [
+        { name: "Package.swift", kind: "file" },
+        { name: "go.mod", kind: "file" },
+        { name: "package.json", kind: "file" },
+      ],
+    });
+
+    expect(findManifestCandidatesFromSnapshot(snapshot)).toEqual([
+      { filename: "package.json", kind: "package_json" },
+      { filename: "go.mod", kind: "go_mod" },
+      { filename: "Package.swift", kind: "package_swift" },
+    ]);
+  });
+
+  it("does not include redacted entries as manifest candidates", () => {
+    const snapshot = buildAnalyzeWorkspaceMetadataSnapshotFromEntries({
+      entries: [
+        { name: ".env", kind: "file" },
+        { name: "package.json", kind: "file" },
+      ],
+    });
+
+    expect(findManifestCandidatesFromSnapshot(snapshot)).toEqual([
+      { filename: "package.json", kind: "package_json" },
+    ]);
+  });
+
   it("builds a README excerpt request for an allowed filename", () => {
     const request = buildReadmeExcerptRequest({
       workspacePath: "/Users/example/project",
@@ -401,6 +497,26 @@ describe("setup-health metadata snapshot helpers", () => {
 
     expect(request).not.toBeNull();
     expect(request?.limits.maxBytes).toBe(4096);
+  });
+
+  it("builds a manifest field request for an allowed filename", () => {
+    const request = buildManifestFieldRequest({
+      workspacePath: "/Users/example/project",
+      filename: "package.json",
+    });
+
+    expect(request).not.toBeNull();
+    expect(request?.candidate.kind).toBe("package_json");
+    expect(request?.limits.maxBytes).toBe(16384);
+  });
+
+  it("returns null for a forbidden manifest filename", () => {
+    const request = buildManifestFieldRequest({
+      workspacePath: "/Users/example/project",
+      filename: "package-lock.json",
+    });
+
+    expect(request).toBeNull();
   });
 
   it("returns null for a forbidden README filename", () => {
@@ -697,5 +813,120 @@ describe("setup-health metadata snapshot helpers", () => {
     expect(result.inspected.commandsRun).toEqual([]);
     expect(result.aiUsed).toBe(false);
     expect(result.safety.fileContentsRead).toBe(true);
+  });
+
+  it("uses manifest fields to improve detected tools and filesRead", () => {
+    const request = buildAnalyzeWorkspaceRequest({
+      workspace: { selected: true, path: "/Users/example/project" },
+    });
+    const snapshot = buildAnalyzeWorkspaceMetadataSnapshotFromEntries({
+      entries: [{ name: "package.json", kind: "file" }],
+    });
+
+    expect(request).not.toBeNull();
+    if (!request) return;
+
+    const result = buildAnalyzeWorkspaceResultFromMetadata({
+      request,
+      snapshot,
+      manifestFields: {
+        schemaVersion: 1,
+        fieldsType: "analyze_workspace_manifest_fields",
+        filename: "package.json",
+        kind: "package_json",
+        bytesRead: 128,
+        truncated: false,
+        confidence: "high",
+        fields: {
+          name: "paperclip-app",
+          language: "JavaScript",
+          frameworkHints: ["React", "Vite"],
+          packageManagerHints: ["npm-compatible"],
+          scripts: ["dev", "build"],
+          dependencies: ["react", "vite"],
+        },
+        omitted: ["script command values", "raw manifest content"],
+        safety: {
+          readOnly: true,
+          filesChanged: false,
+          commandsRun: false,
+          networkAccessed: false,
+          aiUsed: false,
+          recursiveScan: false,
+          followedSymlink: false,
+        },
+      },
+    });
+
+    expect(result.detected.languages).toContain("JavaScript");
+    expect(result.detected.frameworks).toContain("React");
+    expect(result.detected.packageManagers).toContain("npm-compatible");
+    expect(result.inspected.filesRead).toEqual(["package.json"]);
+    expect(result.inspected.commandsRun).toEqual([]);
+    expect(result.aiUsed).toBe(false);
+  });
+
+  it("tracks README and manifest reads together without commands or AI", () => {
+    const request = buildAnalyzeWorkspaceRequest({
+      workspace: { selected: true, path: "/Users/example/project" },
+    });
+    const snapshot = buildAnalyzeWorkspaceMetadataSnapshotFromEntries({
+      entries: [{ name: "package.json", kind: "file" }, { name: "README.md", kind: "file" }],
+    });
+
+    expect(request).not.toBeNull();
+    if (!request) return;
+
+    const result = buildAnalyzeWorkspaceResultFromMetadata({
+      request,
+      snapshot,
+      readmeExcerpt: {
+        schemaVersion: 1,
+        excerptType: "analyze_workspace_readme_excerpt",
+        filename: "README.md",
+        bytesRead: 64,
+        truncated: false,
+        content: "# Demo Project\n\nA sample app.\n",
+        safety: {
+          readOnly: true,
+          filesChanged: false,
+          commandsRun: false,
+          networkAccessed: false,
+          aiUsed: false,
+          recursiveScan: false,
+          followedSymlink: false,
+        },
+      },
+      manifestFields: {
+        schemaVersion: 1,
+        fieldsType: "analyze_workspace_manifest_fields",
+        filename: "package.json",
+        kind: "package_json",
+        bytesRead: 128,
+        truncated: false,
+        confidence: "high",
+        fields: {
+          name: "paperclip-app",
+          language: "JavaScript",
+          dependencies: ["react"],
+        },
+        omitted: ["raw manifest content"],
+        safety: {
+          readOnly: true,
+          filesChanged: false,
+          commandsRun: false,
+          networkAccessed: false,
+          aiUsed: false,
+          recursiveScan: false,
+          followedSymlink: false,
+        },
+      },
+    });
+
+    expect(result.inspected.filesRead).toEqual(["README.md", "package.json"]);
+    expect(result.contentReads).toHaveLength(2);
+    expect(result.safety.fileContentsRead).toBe(true);
+    expect(result.inspected.commandsRun).toEqual([]);
+    expect(result.aiUsed).toBe(false);
   });
 });

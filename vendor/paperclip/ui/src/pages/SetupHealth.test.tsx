@@ -21,6 +21,7 @@ const healthGetMock = vi.fn();
 const heartbeatsListMock = vi.fn();
 const analyzeWorkspaceCollectMetadataMock = vi.fn();
 const analyzeWorkspaceReadmeExcerptMock = vi.fn();
+const analyzeWorkspaceManifestFieldsMock = vi.fn();
 
 vi.mock("@/context/CompanyContext", () => ({
   useCompany: () => ({ selectedCompanyId: "company-1" }),
@@ -43,6 +44,7 @@ vi.mock("@/api/analyze-workspace", () => ({
   analyzeWorkspaceApi: {
     collectMetadata: (input: unknown) => analyzeWorkspaceCollectMetadataMock(input),
     readmeExcerpt: (input: unknown) => analyzeWorkspaceReadmeExcerptMock(input),
+    manifestFields: (input: unknown) => analyzeWorkspaceManifestFieldsMock(input),
   },
 }));
 
@@ -83,6 +85,7 @@ describe("SetupHealth", () => {
     heartbeatsListMock.mockResolvedValue([]);
     analyzeWorkspaceCollectMetadataMock.mockReset();
     analyzeWorkspaceReadmeExcerptMock.mockReset();
+    analyzeWorkspaceManifestFieldsMock.mockReset();
     analyzeWorkspaceCollectMetadataMock.mockResolvedValue({
       ok: true,
       snapshot: {
@@ -138,6 +141,38 @@ describe("SetupHealth", () => {
         bytesRead: 48,
         truncated: false,
         content: "# Paperclip App\n\nA safe workspace summary demo.\n",
+        safety: {
+          readOnly: true,
+          filesChanged: false,
+          commandsRun: false,
+          networkAccessed: false,
+          aiUsed: false,
+          recursiveScan: false,
+          followedSymlink: false,
+        },
+      },
+    });
+    analyzeWorkspaceManifestFieldsMock.mockResolvedValue({
+      ok: true,
+      manifest: {
+        schemaVersion: 1,
+        fieldsType: "analyze_workspace_manifest_fields",
+        filename: "package.json",
+        kind: "package_json",
+        bytesRead: 220,
+        truncated: false,
+        confidence: "high",
+        fields: {
+          name: "paperclip-app",
+          description: "A safe workspace summary demo.",
+          language: "JavaScript",
+          packageManagerHints: ["npm-compatible"],
+          frameworkHints: ["React", "Vite"],
+          scripts: ["dev", "build", "test"],
+          dependencies: ["react", "vite"],
+          devDependencies: ["typescript", "vitest"],
+        },
+        omitted: ["script command values", "dependency versions", "raw manifest content"],
         safety: {
           readOnly: true,
           filesChanged: false,
@@ -719,7 +754,7 @@ describe("SetupHealth", () => {
     expect(container.textContent).toContain("What I inspected");
     expect(container.textContent).toContain("What I did not inspect");
     expect(container.textContent).toContain("What’s next?");
-    expect(container.textContent).toContain("Read selected manifest fields — coming next");
+    expect(container.textContent).toContain("Read selected manifest fields");
     expect(container.textContent).toContain("Improve summary with Cloud AI — coming later");
     expect(container.textContent).toContain("Inspect project structure — coming later");
     expect(container.textContent).not.toContain("tests passed");
@@ -789,6 +824,74 @@ describe("SetupHealth", () => {
     expect(container.textContent).toContain("README.md");
     expect(container.textContent).toContain("This result uses limited top-level metadata and one approved README excerpt.");
     expect(container.textContent).toContain("A small approved README excerpt was read.");
+    expect(container.textContent).toContain("Approved file reads: README.md, up to 4 KB");
+    expect(container.textContent).toContain("No commands were run.");
+    expect(container.textContent).toContain("No AI was used.");
+    expect(container.textContent).not.toContain("No file contents were read.");
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("offers and applies the approved manifest fields step", async () => {
+    const root = renderSetupHealth(container);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const mockModeButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Mock states");
+    act(() => {
+      mockModeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const warningButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Workspace warning");
+    act(() => {
+      warningButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const analyzeButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Analyze this workspace");
+    act(() => {
+      analyzeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const continueButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Continue");
+    act(() => {
+      continueButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const prepareButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Prepare request");
+    act(() => {
+      prepareButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const collectButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Collect limited metadata");
+    await act(async () => {
+      collectButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain("Read selected manifest fields");
+    expect(container.textContent).toContain("optional and read-only");
+
+    const manifestButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Read selected manifest fields");
+    await act(async () => {
+      manifestButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain("Manifest fields read");
+    expect(container.textContent).toContain("package.json");
+    expect(container.textContent).toContain("Selected field groups extracted");
+    expect(container.textContent).toContain("This result uses limited metadata and approved manifest fields.");
     expect(container.textContent).toContain("No commands were run.");
     expect(container.textContent).toContain("No AI was used.");
     expect(container.textContent).not.toContain("No file contents were read.");
@@ -844,6 +947,57 @@ describe("SetupHealth", () => {
 
     expect(container.textContent).toContain("No top-level README candidate was found.");
     expect(container.textContent).toContain("README excerpt");
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("shows no supported manifest candidate messaging when none exists", async () => {
+    const root = renderSetupHealth(container);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const mockModeButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Mock states");
+    act(() => {
+      mockModeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const noManifestButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Ready (No Manifest)");
+    act(() => {
+      noManifestButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const analyzeButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Analyze this workspace");
+    act(() => {
+      analyzeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const continueButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Continue");
+    act(() => {
+      continueButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const prepareButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Prepare request");
+    act(() => {
+      prepareButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const collectButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Collect limited metadata");
+    await act(async () => {
+      collectButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain("No supported top-level manifest candidate was found.");
 
     act(() => {
       root.unmount();

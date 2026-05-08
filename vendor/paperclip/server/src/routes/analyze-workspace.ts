@@ -4,6 +4,7 @@ import { validate } from "../middleware/validate.js";
 import { assertBoard } from "./authz.js";
 import {
   collectAnalyzeWorkspaceTopLevelMetadataFromFilesystem,
+  readTopLevelManifestFields,
   readTopLevelReadmeExcerpt,
 } from "../services/analyze-workspace-metadata.js";
 
@@ -22,6 +23,11 @@ const readmeExcerptSchema = z.object({
   workspacePath: z.string().trim().min(1),
   filename: z.string().trim().min(1),
   maxBytes: z.number().int().min(1).max(4096).optional(),
+});
+const manifestFieldsSchema = z.object({
+  workspacePath: z.string().trim().min(1),
+  filename: z.string().trim().min(1),
+  maxBytes: z.number().int().min(1).max(16384).optional(),
 });
 
 export function analyzeWorkspaceRoutes() {
@@ -47,6 +53,20 @@ export function analyzeWorkspaceRoutes() {
     async (req, res) => {
       assertBoard(req);
       const result = await readTopLevelReadmeExcerpt(req.body);
+      if (!result.ok) {
+        res.status(422).json(result);
+        return;
+      }
+      res.json(result);
+    },
+  );
+
+  router.post(
+    "/analyze-workspace/manifest-fields",
+    validate(manifestFieldsSchema),
+    async (req, res) => {
+      assertBoard(req);
+      const result = await readTopLevelManifestFields(req.body);
       if (!result.ok) {
         res.status(422).json(result);
         return;

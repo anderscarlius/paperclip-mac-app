@@ -11,6 +11,8 @@
 - Metadata-only first result
 - Approved README excerpt
 - Improved first summary from README excerpt
+- Approved manifest fields
+- Improved first summary from manifest fields
 - Safety transparency
 
 ## Partially working
@@ -23,7 +25,7 @@
 ## Not built yet
 
 - AI-assisted analysis
-- Manifest excerpts
+- Deeper manifest excerpts
 - Code editing
 - Test execution
 - Deep repo scanning
