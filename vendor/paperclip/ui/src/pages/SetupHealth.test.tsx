@@ -19,6 +19,7 @@ import {
 
 const healthGetMock = vi.fn();
 const heartbeatsListMock = vi.fn();
+const analyzeWorkspaceCollectMetadataMock = vi.fn();
 
 vi.mock("@/context/CompanyContext", () => ({
   useCompany: () => ({ selectedCompanyId: "company-1" }),
@@ -34,6 +35,12 @@ vi.mock("@/api/heartbeats", () => ({
   heartbeatsApi: {
     list: (companyId: string, agentId?: string, limit?: number) =>
       heartbeatsListMock(companyId, agentId, limit),
+  },
+}));
+
+vi.mock("@/api/analyze-workspace", () => ({
+  analyzeWorkspaceApi: {
+    collectMetadata: (input: unknown) => analyzeWorkspaceCollectMetadataMock(input),
   },
 }));
 
@@ -72,6 +79,51 @@ describe("SetupHealth", () => {
       deploymentMode: "authenticated",
     });
     heartbeatsListMock.mockResolvedValue([]);
+    analyzeWorkspaceCollectMetadataMock.mockReset();
+    analyzeWorkspaceCollectMetadataMock.mockResolvedValue({
+      ok: true,
+      snapshot: {
+        schemaVersion: 1,
+        snapshotType: "analyze_workspace_metadata_snapshot",
+        collectionMode: "future_filesystem_read",
+        workspace: {
+          displayName: "paperclip-app",
+          pathHealth: { risk: "none", reasons: [] },
+        },
+        topLevelEntries: [
+          { name: "README.md", kind: "file" },
+          { name: "package.json", kind: "file" },
+        ],
+        manifestIndicators: [
+          { name: "README.md", present: true, category: "readme" },
+          { name: "package.json", present: true, category: "javascript" },
+        ],
+        limits: {
+          maxTopLevelEntries: 50,
+          recursiveScan: false,
+          fileContentsRead: false,
+          commandsRun: false,
+          networkAccessed: false,
+        },
+        redactions: [],
+        notCollected: [
+          "No file contents were read.",
+        ],
+        safety: {
+          readOnly: true,
+          filesChanged: false,
+          commandsRun: false,
+          networkAccessed: false,
+          agentStarted: false,
+          localFallbackUsed: false,
+          automaticRoutingUsed: false,
+        },
+      },
+      warnings: [
+        "Collection is filename-only.",
+        "No file contents were read.",
+      ],
+    });
   });
 
   afterEach(() => {
@@ -571,6 +623,63 @@ describe("SetupHealth", () => {
     expect(container.textContent).toContain("Future safe metadata scope");
     expect(container.textContent).toContain("No recursive scan will be performed.");
     expect(container.textContent).toContain("Secrets will not be read.");
+    expect(container.textContent).not.toContain("Project summary");
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("shows limited metadata collected after Collect limited metadata is clicked", async () => {
+    const root = renderSetupHealth(container);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const mockModeButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Mock states");
+    act(() => {
+      mockModeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const readyButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Ready");
+    act(() => {
+      readyButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const analyzeButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Analyze this workspace");
+    act(() => {
+      analyzeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const continueButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Continue");
+    act(() => {
+      continueButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const prepareButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Prepare request");
+    act(() => {
+      prepareButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const collectButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Collect limited metadata");
+    expect(collectButton).not.toBeUndefined();
+
+    await act(async () => {
+      collectButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain("Limited read-only metadata collected");
+    expect(container.textContent).toContain("No file contents were read.");
+    expect(container.textContent).toContain("No commands were run.");
+    expect(container.textContent).toContain("No recursive scan was performed.");
     expect(container.textContent).not.toContain("Project summary");
 
     act(() => {

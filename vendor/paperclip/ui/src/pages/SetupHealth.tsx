@@ -17,18 +17,21 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Separator } from "@/components/ui/separator";
+import { analyzeWorkspaceApi } from "@/api/analyze-workspace";
 import { healthApi, type HealthStatus } from "@/api/health";
 import { heartbeatsApi } from "@/api/heartbeats";
 import { useCompany } from "@/context/CompanyContext";
 import { readLocalFallbackCandidateSignal } from "@/lib/local-fallback-offer";
 import { queryKeys } from "@/lib/queryKeys";
 import {
+  collectAnalyzeWorkspaceTopLevelMetadataFromProvidedEntries,
   prepareAnalyzeWorkspaceHandoff,
   buildAnalyzeWorkspaceSetupState,
   buildSetupHealthViewModel,
   mockSetupHealthStates,
   setupHealthOverallStatusLabel,
   setupHealthStatusLabel,
+  type AnalyzeWorkspaceCollectionResult,
   type AnalyzeWorkspaceHandoffResult,
   type AnalyzeWorkspaceSetupState,
   type SetupHealthCard,
@@ -39,7 +42,27 @@ import { cn } from "@/lib/utils";
 
 type MockStateId = (typeof mockSetupHealthStates)[number]["id"];
 type ViewMode = "diagnostics" | "mock";
-type AnalyzeFlowState = "closed" | "confirm" | "ready" | "prepared";
+type AnalyzeFlowState = "closed" | "confirm" | "ready" | "prepared" | "collected";
+type MetadataPreviewSource = "live" | "example";
+
+const MOCK_METADATA_ENTRIES: Record<MockStateId, Array<{ name: string; kind: "file" | "directory" | "unknown" }>> = {
+  needs_attention: [],
+  workspace_warning: [
+    { name: "README.md", kind: "file" },
+    { name: "package.json", kind: "file" },
+    { name: ".env", kind: "file" },
+    { name: "src", kind: "directory" },
+    { name: "node_modules", kind: "directory" },
+    { name: ".git", kind: "directory" },
+  ],
+  ready: [
+    { name: "README.md", kind: "file" },
+    { name: "Package.swift", kind: "file" },
+    { name: "Sources", kind: "directory" },
+    { name: "Tests", kind: "directory" },
+    { name: "docs", kind: "directory" },
+  ],
+};
 
 function severityBadgeVariant(severity: SetupHealthSeverity): "default" | "secondary" | "outline" | "destructive" {
   switch (severity) {
@@ -116,7 +139,7 @@ function readRunDiagnostics(run: HeartbeatRun | null): SetupHealthDiagnostics {
   const warningMessages = readStringArray(resultJson.warnings);
   const modelHosting = asNonEmptyString(runtimeDiagnostics?.modelHosting) ?? asNonEmptyString(runtimeContext?.modelHosting);
 
-  let localAiStatus: SetupHealthDiagnostics["localAi"] extends { status?: infer T } ? T : never = "unknown";
+  let localAiStatus: "available_candidate" | "available" | "optional" | "unavailable" | "unknown" = "unknown";
   if (localFallbackCandidate?.available) {
     localAiStatus = "available_candidate";
   } else if (modelHosting === "local") {
@@ -335,6 +358,9 @@ export function SetupHealth() {
   const [selectedState, setSelectedState] = useState<MockStateId>("workspace_warning");
   const [selectedActionMessage, setSelectedActionMessage] = useState<string | null>(null);
   const [analyzeFlowState, setAnalyzeFlowState] = useState<AnalyzeFlowState>("closed");
+  const [metadataCollectionResult, setMetadataCollectionResult] = useState<AnalyzeWorkspaceCollectionResult | null>(null);
+  const [metadataPreviewSource, setMetadataPreviewSource] = useState<MetadataPreviewSource | null>(null);
+  const [isCollectingMetadata, setIsCollectingMetadata] = useState(false);
 
   const { data: health, isLoading: isHealthLoading } = useQuery({
     queryKey: queryKeys.health,
@@ -413,11 +439,69 @@ export function SetupHealth() {
     return "Ready to analyze this workspace. The first analysis will be read-only and will not modify files.";
   }, [workspaceCard?.status]);
 
+  async function handleCollectLimitedMetadata() {
+    if (!analyzeSetupState.request) return;
+
+    setIsCollectingMetadata(true);
+    setSelectedActionMessage(null);
+    try {
+      let result: AnalyzeWorkspaceCollectionResult;
+      let previewSource: MetadataPreviewSource;
+
+      if (viewMode === "mock") {
+        result = collectAnalyzeWorkspaceTopLevelMetadataFromProvidedEntries({
+          workspace: {
+            displayName: analyzeSetupState.request.workspace.displayName ?? null,
+            path: analyzeSetupState.request.workspace.path,
+            pathHealth: analyzeSetupState.request.workspace.pathHealth
+              ? {
+                risk: analyzeSetupState.request.workspace.pathHealth.risk,
+                reasons: [...analyzeSetupState.request.workspace.pathHealth.reasons],
+              }
+              : null,
+          },
+          topLevelEntries: MOCK_METADATA_ENTRIES[selectedState] ?? [],
+          maxTopLevelEntries: 50,
+        });
+        previewSource = "example";
+      } else {
+        result = await analyzeWorkspaceApi.collectMetadata({
+          workspace: {
+            displayName: analyzeSetupState.request.workspace.displayName ?? null,
+            path: analyzeSetupState.request.workspace.path,
+            pathHealth: analyzeSetupState.request.workspace.pathHealth
+              ? {
+                risk: analyzeSetupState.request.workspace.pathHealth.risk,
+                reasons: [...analyzeSetupState.request.workspace.pathHealth.reasons],
+              }
+              : null,
+          },
+          maxTopLevelEntries: 50,
+        });
+        previewSource = "live";
+      }
+
+      setMetadataCollectionResult(result);
+      setMetadataPreviewSource(previewSource);
+      setAnalyzeFlowState("collected");
+    } catch (error) {
+      setSelectedActionMessage(
+        error instanceof Error
+          ? `Metadata collection is not wired yet: ${error.message}`
+          : "Metadata collection is not wired yet.",
+      );
+    } finally {
+      setIsCollectingMetadata(false);
+    }
+  }
+
   function handleAction(label: string) {
     if (label === "Analyze this workspace") {
       if (viewModel.primaryAction.disabled) return;
       setAnalyzeFlowState("confirm");
       setSelectedActionMessage(null);
+      setMetadataCollectionResult(null);
+      setMetadataPreviewSource(null);
       return;
     }
 
@@ -430,11 +514,13 @@ export function SetupHealth() {
     if (label === "Continue") {
       setAnalyzeFlowState("ready");
       setSelectedActionMessage(null);
+      setMetadataCollectionResult(null);
+      setMetadataPreviewSource(null);
       return;
     }
 
     if (label === "Back") {
-      setAnalyzeFlowState((currentState) => (currentState === "prepared" ? "ready" : "confirm"));
+      setAnalyzeFlowState((currentState) => (currentState === "prepared" || currentState === "collected" ? "ready" : "confirm"));
       setSelectedActionMessage(null);
       return;
     }
@@ -697,6 +783,102 @@ export function SetupHealth() {
                 </Collapsible>
 
                 <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      void handleCollectLimitedMetadata();
+                    }}
+                    disabled={isCollectingMetadata || !analyzeHandoffResult.accepted}
+                  >
+                    {isCollectingMetadata ? "Collecting limited metadata..." : "Collect limited metadata"}
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => handleAction("Back")}>
+                    Back
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => handleAction("Cancel")}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {analyzeFlowState === "collected" && metadataCollectionResult ? (
+            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-4">
+              <div className="space-y-4">
+                <div>
+                  <div className="text-sm font-medium text-foreground">Limited read-only metadata collected</div>
+                  <div className="mt-1 text-sm text-muted-foreground">
+                    {metadataCollectionResult.ok
+                      ? "Paperclip collected only immediate top-level names and types for this workspace."
+                      : "Paperclip could not complete limited metadata collection for this workspace."}
+                  </div>
+                </div>
+
+                <div className="rounded-md border border-border/70 bg-background/80 px-3 py-3 text-sm text-muted-foreground">
+                  <div>No file contents were read.</div>
+                  <div>No commands were run.</div>
+                  <div>No recursive scan was performed.</div>
+                  <div>Secrets were not read.</div>
+                  <div>No agent has been started.</div>
+                  {metadataPreviewSource === "example" ? (
+                    <div className="mt-2 text-xs">Example only</div>
+                  ) : null}
+                </div>
+
+                {metadataCollectionResult.warnings.length > 0 ? (
+                  <div className="space-y-2">
+                    {metadataCollectionResult.warnings.map((warning) => (
+                      <div
+                        key={warning}
+                        className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-muted-foreground"
+                      >
+                        {warning}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                {metadataCollectionResult.ok ? (
+                  <>
+                    <div className="rounded-md border border-border/70 bg-background/70 px-3 py-3 text-sm text-muted-foreground">
+                      <div className="font-medium text-foreground">Top-level entries</div>
+                      <div className="mt-2 space-y-1">
+                        {metadataCollectionResult.snapshot.topLevelEntries.map((entry, index) => (
+                          <div key={`${entry.name}-${index}`}>
+                            {entry.name} · {entry.kind}{entry.redacted ? " · redacted" : ""}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-md border border-border/70 bg-background/70 px-3 py-3 text-sm text-muted-foreground">
+                      <div className="font-medium text-foreground">Detected manifest indicators</div>
+                      <div className="mt-2 space-y-1">
+                        {metadataCollectionResult.snapshot.manifestIndicators.length > 0 ? (
+                          metadataCollectionResult.snapshot.manifestIndicators.map((indicator) => (
+                            <div key={`${indicator.name}-${indicator.category}`}>
+                              {indicator.name} · {indicator.category}
+                            </div>
+                          ))
+                        ) : (
+                          <div>No common manifest indicators were detected.</div>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-3 text-sm text-muted-foreground">
+                    <div className="font-medium text-foreground">Metadata collection could not continue</div>
+                    <div className="mt-2 space-y-1">
+                      {metadataCollectionResult.errors.map((error) => (
+                        <div key={error}>{error}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex flex-wrap gap-2">
                   <Button size="sm" variant="outline" onClick={() => handleAction("Back")}>
                     Back
                   </Button>
@@ -720,6 +902,8 @@ export function SetupHealth() {
                   setViewMode("diagnostics");
                   setSelectedActionMessage(null);
                   setAnalyzeFlowState("closed");
+                  setMetadataCollectionResult(null);
+                  setMetadataPreviewSource(null);
                 }}
               >
                 Live diagnostics
@@ -731,6 +915,8 @@ export function SetupHealth() {
                   setViewMode("mock");
                   setSelectedActionMessage(null);
                   setAnalyzeFlowState("closed");
+                  setMetadataCollectionResult(null);
+                  setMetadataPreviewSource(null);
                 }}
               >
                 Mock states
@@ -751,6 +937,8 @@ export function SetupHealth() {
                       setSelectedState(state.id);
                       setSelectedActionMessage(null);
                       setAnalyzeFlowState("closed");
+                      setMetadataCollectionResult(null);
+                      setMetadataPreviewSource(null);
                     }}
                   >
                     {state.label}

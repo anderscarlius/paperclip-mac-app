@@ -1,6 +1,7 @@
 export { api } from "./client";
 export { authApi } from "./auth";
 export { healthApi } from "./health";
+export { analyzeWorkspaceApi } from "./analyze-workspace";
 export { accessApi } from "./access";
 export { companiesApi } from "./companies";
 export { agentsApi } from "./agents";

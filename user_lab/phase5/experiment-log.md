@@ -75,3 +75,9 @@ Change: Added a fixture-only safe metadata snapshot contract, sensitive-name red
 Expected effect: Define exactly what first-run Analyze Workspace metadata collection may inspect later, without enabling any real filesystem or AI execution.
 Observed result: Paperclip now has a test-covered snapshot model that stays filename-only, redacts sensitive-looking entries, enforces non-executing invariants, and keeps the UI honest about what 5J may collect next.
 Next action: Review the diff, confirm safety checks are clean, and publish Phase 5I as a commit and private GitHub backup push.
+
+Time: 2026-05-08T08:45:00+0200
+Change: Added a real top-level filename-only metadata collector route and service, plus a collected-state UI that can show limited read-only metadata without implying analysis has run.
+Expected effect: Let Paperclip safely inspect only immediate workspace entry names and types, populate the existing snapshot contract, and surface that minimal metadata in the first-run flow.
+Observed result: The app can now collect and display limited top-level metadata with sensitive-name redaction, no file-content reads, no recursive scan, no commands, and no AI execution; mock mode stays clearly marked as example-only.
+Next action: Review the final diff, confirm staged safety checks stay clean, and publish Phase 5J as a commit and private GitHub backup push.

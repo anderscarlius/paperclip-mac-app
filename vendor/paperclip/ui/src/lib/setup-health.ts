@@ -217,6 +217,35 @@ export type AnalyzeWorkspaceMetadataSnapshotValidationResult =
   | { ok: true }
   | { ok: false; errors: string[] };
 
+export type AnalyzeWorkspaceCollectionInput = {
+  workspace: {
+    displayName?: string | null;
+    path: string;
+    pathHealth?: {
+      risk: "none" | "low" | "medium" | "unknown";
+      reasons: string[];
+    } | null;
+  };
+  topLevelEntries: Array<{
+    name: string;
+    kind: "file" | "directory" | "unknown";
+  }>;
+  maxTopLevelEntries?: number;
+};
+
+export type AnalyzeWorkspaceCollectionResult =
+  | {
+    ok: true;
+    snapshot: AnalyzeWorkspaceMetadataSnapshot;
+    warnings: string[];
+  }
+  | {
+    ok: false;
+    snapshot: null;
+    errors: string[];
+    warnings: string[];
+  };
+
 export type SetupHealthDiagnostics = {
   cloudAi?: {
     authStatus?: "connected" | "missing" | "unknown";
@@ -382,7 +411,7 @@ function formatPathRisk(value: WorkspacePathHealth["risk"]): string {
 }
 
 function formatWarningList(
-  warnings: SetupHealthDiagnostics["runtime"] extends { warnings?: infer T } ? T : never,
+  warnings: Array<{ code?: string; message?: string; severity?: string }> | undefined,
 ): string | null {
   if (!warnings || warnings.length === 0) return null;
   const visibleWarnings = warnings
@@ -716,8 +745,11 @@ export function validateAnalyzeWorkspaceMetadataSnapshot(
   if (snapshot.snapshotType !== "analyze_workspace_metadata_snapshot") {
     errors.push('snapshotType must be "analyze_workspace_metadata_snapshot".');
   }
-  if (snapshot.collectionMode !== "provided_fixture_only") {
-    errors.push('collectionMode must be "provided_fixture_only" in Phase 5I.');
+  if (snapshot.collectionMode !== "provided_fixture_only" && snapshot.collectionMode !== "future_filesystem_read") {
+    errors.push('collectionMode must be "provided_fixture_only" or "future_filesystem_read".');
+  }
+  if (snapshot.limits.maxTopLevelEntries < 1) {
+    errors.push("limits.maxTopLevelEntries must be at least 1.");
   }
   if (snapshot.limits.recursiveScan !== false) errors.push("limits.recursiveScan must be false.");
   if (snapshot.limits.fileContentsRead !== false) errors.push("limits.fileContentsRead must be false.");
@@ -751,6 +783,49 @@ export function validateAnalyzeWorkspaceMetadataSnapshot(
   }
 
   return errors.length > 0 ? { ok: false, errors } : { ok: true };
+}
+
+export function collectAnalyzeWorkspaceTopLevelMetadataFromProvidedEntries(
+  input: AnalyzeWorkspaceCollectionInput,
+): AnalyzeWorkspaceCollectionResult {
+  const snapshot = buildAnalyzeWorkspaceMetadataSnapshotFromEntries({
+    workspace: {
+      displayName: input.workspace.displayName ?? null,
+      pathHealth: input.workspace.pathHealth ?? null,
+    },
+    entries: input.topLevelEntries,
+    maxTopLevelEntries: input.maxTopLevelEntries,
+  });
+  const validation = validateAnalyzeWorkspaceMetadataSnapshot(snapshot);
+  const warnings: string[] = [
+    "Collection is filename-only.",
+    "No file contents were read.",
+  ];
+
+  if (snapshot.topLevelEntries.length < input.topLevelEntries.length) {
+    warnings.push(`Top-level entries were truncated at ${snapshot.limits.maxTopLevelEntries}.`);
+  }
+  if (snapshot.redactions.length > 0) {
+    warnings.push("Sensitive-looking top-level names were redacted.");
+  }
+  if (snapshot.workspace.pathHealth?.risk === "medium") {
+    warnings.push("Workspace path health has a warning. Metadata collection remained read-only.");
+  }
+
+  if (!validation.ok) {
+    return {
+      ok: false,
+      snapshot: null,
+      errors: validation.errors,
+      warnings,
+    };
+  }
+
+  return {
+    ok: true,
+    snapshot,
+    warnings,
+  };
 }
 
 export function buildAnalyzeWorkspaceSetupState(

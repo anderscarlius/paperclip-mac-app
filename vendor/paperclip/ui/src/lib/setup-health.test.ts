@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  collectAnalyzeWorkspaceTopLevelMetadataFromProvidedEntries,
   buildAnalyzeWorkspaceMetadataSnapshotFromEntries,
   classifyManifestIndicator,
   isSensitiveWorkspaceEntryName,
@@ -141,7 +142,6 @@ describe("setup-health metadata snapshot helpers", () => {
 
     const mutatedSnapshot = {
       ...snapshot,
-      collectionMode: "future_filesystem_read" as const,
       limits: {
         ...snapshot.limits,
         fileContentsRead: true as false,
@@ -152,7 +152,6 @@ describe("setup-health metadata snapshot helpers", () => {
 
     expect(validation.ok).toBe(false);
     if (!validation.ok) {
-      expect(validation.errors.some((error) => error.includes("collectionMode"))).toBe(true);
       expect(validation.errors.some((error) => error.includes("fileContentsRead"))).toBe(true);
     }
   });
@@ -169,5 +168,86 @@ describe("setup-health metadata snapshot helpers", () => {
 
     expect(snapshot.topLevelEntries).toHaveLength(2);
     expect(snapshot.notCollected).toContain("Top-level entry list was truncated at 2 entries.");
+  });
+
+  it("collects safe top-level metadata from provided entries", () => {
+    const result = collectAnalyzeWorkspaceTopLevelMetadataFromProvidedEntries({
+      workspace: {
+        displayName: "paperclip-app",
+        path: "/Users/example/Projects/paperclip-app",
+        pathHealth: {
+          risk: "none",
+          reasons: [],
+        },
+      },
+      topLevelEntries: [
+        { name: "README.md", kind: "file" },
+        { name: "package.json", kind: "file" },
+        { name: ".git", kind: "directory" },
+      ],
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.snapshot.snapshotType).toBe("analyze_workspace_metadata_snapshot");
+      expect(result.snapshot.limits.recursiveScan).toBe(false);
+      expect(result.snapshot.limits.fileContentsRead).toBe(false);
+      expect(result.snapshot.limits.commandsRun).toBe(false);
+      expect(result.snapshot.limits.networkAccessed).toBe(false);
+      expect(result.snapshot.safety.agentStarted).toBe(false);
+      expect(result.snapshot.safety.localFallbackUsed).toBe(false);
+      expect(result.snapshot.safety.automaticRoutingUsed).toBe(false);
+      expect(result.snapshot.manifestIndicators.some((indicator) => indicator.name === "package.json")).toBe(true);
+      expect(result.snapshot.manifestIndicators.some((indicator) => indicator.name === ".git")).toBe(true);
+    }
+  });
+
+  it("warns when path health is medium", () => {
+    const result = collectAnalyzeWorkspaceTopLevelMetadataFromProvidedEntries({
+      workspace: {
+        displayName: "Café",
+        path: "/Users/example/Cafe\u0301",
+        pathHealth: {
+          risk: "medium",
+          reasons: ["contains_decomposed_unicode"],
+        },
+      },
+      topLevelEntries: [
+        { name: "README.md", kind: "file" },
+      ],
+    });
+
+    expect(result.warnings.some((warning) => warning.includes("path health"))).toBe(true);
+  });
+
+  it("warns when sensitive names were redacted", () => {
+    const result = collectAnalyzeWorkspaceTopLevelMetadataFromProvidedEntries({
+      workspace: {
+        path: "/Users/example/Projects/paperclip-app",
+      },
+      topLevelEntries: [
+        { name: "credentials.json", kind: "file" },
+      ],
+    });
+
+    expect(result.warnings.some((warning) => warning.includes("redacted"))).toBe(true);
+  });
+
+  it("returns a safe invalid result when snapshot validation fails", () => {
+    const result = collectAnalyzeWorkspaceTopLevelMetadataFromProvidedEntries({
+      workspace: {
+        path: "/Users/example/Projects/paperclip-app",
+      },
+      topLevelEntries: [
+        { name: "README.md", kind: "file" },
+      ],
+      maxTopLevelEntries: 0,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.snapshot).toBeNull();
+      expect(result.errors.length).toBeGreaterThan(0);
+    }
   });
 });
