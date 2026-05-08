@@ -105,3 +105,9 @@ Change: Added an approved manifest field reader, a server-side selected-field ex
 Expected effect: Make the first Paperclip summary more useful without weakening the current trust model by reading only allowlisted manifest fields after explicit approval.
 Observed result: Paperclip can now read selected fields from `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, and `Package.swift`, reflect those reads in `filesRead`, and improve the first summary without using AI or running commands.
 Next action: Run focused tests and typechecks, then review the diff, commit, and push Phase 5N.
+
+Time: 2026-05-08T15:05:00+0200
+Change: Added private-alpha delivery polish with clearer scope copy, local-only feedback prompts, calmer empty/error states, and alpha runbook/checklist/template docs.
+Expected effect: Make the first Paperclip experience easier to demo, easier to trust, and easier to evaluate with early users without adding any new execution behavior.
+Observed result: Setup Health now frames the product as a private alpha, explains what the first flow can and cannot do, surfaces reusable feedback questions, and handles missing README/manifest plus read failures more clearly.
+Next action: Run focused tests and typechecks, then review the diff, commit, and push Phase 5O.

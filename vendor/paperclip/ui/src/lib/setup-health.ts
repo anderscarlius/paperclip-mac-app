@@ -444,6 +444,18 @@ export type AnalyzeWorkspaceFlowStep = {
   description: string;
 };
 
+export type PrivateAlphaCapability = {
+  label: string;
+  status: "working" | "partial" | "not_built";
+  description: string;
+};
+
+export type AnalyzeWorkspaceFeedbackQuestion = {
+  id: string;
+  label: string;
+  helperText?: string;
+};
+
 export type SetupHealthDiagnostics = {
   cloudAi?: {
     authStatus?: "connected" | "missing" | "unknown";
@@ -1164,6 +1176,151 @@ export function buildAnalyzeWorkspaceFlowSteps(input: {
       label: "Improved summary",
       status: readmeExcerptRead || manifestFieldsRead ? "current" : "not_started",
       description: "The summary is updated after approved README or manifest reads.",
+    },
+  ];
+}
+
+export function buildPrivateAlphaCapabilities(): PrivateAlphaCapability[] {
+  return [
+    {
+      label: "Setup Health",
+      status: "working",
+      description: "Paperclip can show setup readiness and first-run safety context.",
+    },
+    {
+      label: "Workspace readiness",
+      status: "working",
+      description: "Paperclip can confirm whether a workspace is selected before analysis starts.",
+    },
+    {
+      label: "Path health warnings",
+      status: "working",
+      description: "Paperclip can warn when the selected workspace path may cause compatibility issues later.",
+    },
+    {
+      label: "Limited top-level metadata collection",
+      status: "working",
+      description: "Paperclip can collect immediate top-level names and types without recursive scanning.",
+    },
+    {
+      label: "Metadata-only first summary",
+      status: "working",
+      description: "Paperclip can build a conservative first summary from safe metadata alone.",
+    },
+    {
+      label: "Approved README excerpt",
+      status: "working",
+      description: "Paperclip can read one small approved top-level README excerpt.",
+    },
+    {
+      label: "Approved manifest field reading",
+      status: "working",
+      description: "Paperclip can extract selected safe fields from one approved top-level manifest.",
+    },
+    {
+      label: "Safety transparency",
+      status: "working",
+      description: "Paperclip can show what it inspected, what it did not inspect, and whether file content was read.",
+    },
+    {
+      label: "First analysis flow",
+      status: "partial",
+      description: "The first-run flow is coherent, but still limited to safe local inspection steps.",
+    },
+    {
+      label: "Project understanding",
+      status: "partial",
+      description: "The first summary is useful for onboarding, but still conservative and incomplete.",
+    },
+    {
+      label: "Cloud/Local AI readiness visibility",
+      status: "partial",
+      description: "Paperclip can show readiness signals, but it does not yet use AI in the first summary.",
+    },
+    {
+      label: "Early-user onboarding",
+      status: "partial",
+      description: "The app is demoable, but still relies on private-alpha guidance and feedback.",
+    },
+    {
+      label: "AI-assisted analysis",
+      status: "not_built",
+      description: "Paperclip does not yet use AI to improve or extend the first workspace summary.",
+    },
+    {
+      label: "Code editing",
+      status: "not_built",
+      description: "Paperclip does not yet edit project files from the first-run flow.",
+    },
+    {
+      label: "Command execution",
+      status: "not_built",
+      description: "Paperclip does not yet run workspace commands from this alpha flow.",
+    },
+    {
+      label: "Deep repo scanning",
+      status: "not_built",
+      description: "Paperclip does not recursively inspect the repository in this private alpha.",
+    },
+    {
+      label: "Dependency health checks",
+      status: "not_built",
+      description: "Paperclip does not yet assess dependency health or package safety.",
+    },
+    {
+      label: "Security review",
+      status: "not_built",
+      description: "Paperclip does not yet review security posture or security risks.",
+    },
+    {
+      label: "Automatic routing",
+      status: "not_built",
+      description: "Paperclip does not automatically route between cloud and local analysis modes.",
+    },
+    {
+      label: "Local fallback execution",
+      status: "not_built",
+      description: "Paperclip does not yet run local fallback execution from the first-user flow.",
+    },
+    {
+      label: "Public installer polish",
+      status: "not_built",
+      description: "Paperclip is still packaged as a private alpha rather than a polished public release.",
+    },
+  ];
+}
+
+export function buildAnalyzeWorkspaceFeedbackQuestions(): AnalyzeWorkspaceFeedbackQuestion[] {
+  return [
+    {
+      id: "inspected_scope",
+      label: "Did you understand what Paperclip inspected?",
+      helperText: "This checks whether the first-run transparency is clear enough.",
+    },
+    {
+      id: "safety_copy",
+      label: "Did the safety copy feel clear?",
+      helperText: "This checks whether users understand what Paperclip did not do.",
+    },
+    {
+      id: "summary_usefulness",
+      label: "Was the first summary useful?",
+      helperText: "This checks whether the first result creates value before AI is added.",
+    },
+    {
+      id: "approved_reads",
+      label: "Did you trust the README and manifest read steps?",
+      helperText: "This checks whether explicit approved reads feel safe and understandable.",
+    },
+    {
+      id: "next_action",
+      label: "What would you expect the next button to do?",
+      helperText: "This helps shape the next safe capability after the alpha flow.",
+    },
+    {
+      id: "self_use",
+      label: "Would you try this on your own project?",
+      helperText: "This helps estimate real first-user trust.",
     },
   ];
 }
@@ -2423,6 +2580,24 @@ export const mockSetupHealthStates = [
   {
     id: "ready_no_manifest",
     label: "Ready (No Manifest)",
+    diagnostics: mockSetupHealthReadyDiagnostics,
+    viewModel: mockSetupHealthReady,
+  },
+  {
+    id: "ready_metadata_error",
+    label: "Ready (Metadata Error)",
+    diagnostics: mockSetupHealthReadyDiagnostics,
+    viewModel: mockSetupHealthReady,
+  },
+  {
+    id: "ready_readme_error",
+    label: "Ready (README Error)",
+    diagnostics: mockSetupHealthReadyDiagnostics,
+    viewModel: mockSetupHealthReady,
+  },
+  {
+    id: "ready_manifest_error",
+    label: "Ready (Manifest Error)",
     diagnostics: mockSetupHealthReadyDiagnostics,
     viewModel: mockSetupHealthReady,
   },

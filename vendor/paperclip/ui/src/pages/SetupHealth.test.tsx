@@ -508,6 +508,10 @@ describe("SetupHealth", () => {
     expect(container.textContent).toContain("Workspace");
     expect(container.textContent).toContain("Developer Tools");
     expect(container.textContent).toContain("Runtime");
+    expect(container.textContent).toContain("Private alpha");
+    expect(container.textContent).toContain("does not yet run AI analysis");
+    expect(container.textContent).toContain("edit code");
+    expect(container.textContent).toContain("execute commands");
 
     act(() => {
       root.unmount();
@@ -754,6 +758,9 @@ describe("SetupHealth", () => {
     expect(container.textContent).toContain("What I inspected");
     expect(container.textContent).toContain("What I did not inspect");
     expect(container.textContent).toContain("What’s next?");
+    expect(container.textContent).toContain("Help improve this first run");
+    expect(container.textContent).toContain("No feedback is sent automatically.");
+    expect(container.textContent).toContain("Did you understand what Paperclip inspected?");
     expect(container.textContent).toContain("Read selected manifest fields");
     expect(container.textContent).toContain("Improve summary with Cloud AI — coming later");
     expect(container.textContent).toContain("Inspect project structure — coming later");
@@ -945,7 +952,8 @@ describe("SetupHealth", () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).toContain("No top-level README candidate was found.");
+    expect(container.textContent).toContain("No top-level README was found.");
+    expect(container.textContent).toContain("Paperclip will not search subdirectories automatically in this alpha.");
     expect(container.textContent).toContain("README excerpt");
 
     act(() => {
@@ -997,7 +1005,180 @@ describe("SetupHealth", () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).toContain("No supported top-level manifest candidate was found.");
+    expect(container.textContent).toContain("No supported top-level manifest was found.");
+    expect(container.textContent).toContain(
+      "Supported manifests in this alpha: package.json, pyproject.toml, Cargo.toml, go.mod, Package.swift.",
+    );
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("shows a calm metadata collection error state", async () => {
+    const root = renderSetupHealth(container);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const mockModeButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Mock states");
+    act(() => {
+      mockModeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const metadataErrorButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Ready (Metadata Error)");
+    act(() => {
+      metadataErrorButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const analyzeButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Analyze this workspace");
+    act(() => {
+      analyzeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const continueButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Continue");
+    act(() => {
+      continueButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const prepareButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Prepare request");
+    act(() => {
+      prepareButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const collectButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Collect limited metadata");
+    await act(async () => {
+      collectButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain("Limited metadata collection failed.");
+    expect(container.textContent).toContain("No files were changed and no commands were run.");
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("shows a calm README read error state", async () => {
+    const root = renderSetupHealth(container);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const mockModeButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Mock states");
+    act(() => {
+      mockModeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const readmeErrorButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Ready (README Error)");
+    act(() => {
+      readmeErrorButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const analyzeButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Analyze this workspace");
+    act(() => {
+      analyzeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const continueButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Continue");
+    act(() => {
+      continueButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const prepareButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Prepare request");
+    act(() => {
+      prepareButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const collectButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Collect limited metadata");
+    await act(async () => {
+      collectButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    const readmeButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Read small README excerpt");
+    await act(async () => {
+      readmeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain("README excerpt could not be read.");
+    expect(container.textContent).toContain("No other files were opened.");
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("shows a calm manifest read error state", async () => {
+    const root = renderSetupHealth(container);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const mockModeButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Mock states");
+    act(() => {
+      mockModeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const manifestErrorButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Ready (Manifest Error)");
+    act(() => {
+      manifestErrorButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const analyzeButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Analyze this workspace");
+    act(() => {
+      analyzeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const continueButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Continue");
+    act(() => {
+      continueButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const prepareButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Prepare request");
+    act(() => {
+      prepareButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const collectButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Collect limited metadata");
+    await act(async () => {
+      collectButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    const manifestButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Read selected manifest fields");
+    await act(async () => {
+      manifestButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain("Manifest fields could not be read.");
+    expect(container.textContent).toContain("Raw manifest content was not exposed.");
 
     act(() => {
       root.unmount();

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildAnalyzeWorkspaceFeedbackQuestions,
   buildAnalyzeWorkspaceFlowSteps,
+  buildPrivateAlphaCapabilities,
   buildManifestFieldRequest,
   buildAnalyzeWorkspaceRequest,
   buildReadmeExcerptRequest,
@@ -109,6 +111,50 @@ describe("setup-health flow steps", () => {
     expect(steps.find((step) => step.id === "readme_excerpt")?.status).toBe("complete");
     expect(steps.find((step) => step.id === "manifest_fields")?.status).toBe("complete");
     expect(steps.find((step) => step.id === "improved_summary")?.status).toBe("current");
+  });
+});
+
+describe("private alpha helpers", () => {
+  it("returns working private alpha capabilities", () => {
+    const capabilities = buildPrivateAlphaCapabilities();
+    expect(capabilities.some((capability) => capability.status === "working")).toBe(true);
+    expect(capabilities.some((capability) => capability.label === "Setup Health")).toBe(true);
+  });
+
+  it("returns partial private alpha capabilities", () => {
+    const capabilities = buildPrivateAlphaCapabilities();
+    expect(capabilities.some((capability) => capability.status === "partial")).toBe(true);
+  });
+
+  it("returns not-built private alpha capabilities", () => {
+    const capabilities = buildPrivateAlphaCapabilities();
+    expect(capabilities.some((capability) => capability.status === "not_built")).toBe(true);
+  });
+
+  it("includes AI-assisted analysis as not built", () => {
+    const capabilities = buildPrivateAlphaCapabilities();
+    expect(capabilities.find((capability) => capability.label === "AI-assisted analysis")?.status).toBe("not_built");
+  });
+
+  it("includes command execution as not built", () => {
+    const capabilities = buildPrivateAlphaCapabilities();
+    expect(capabilities.find((capability) => capability.label === "Command execution")?.status).toBe("not_built");
+  });
+
+  it("returns key analyze-workspace feedback questions", () => {
+    const questions = buildAnalyzeWorkspaceFeedbackQuestions();
+    expect(questions.length).toBeGreaterThan(0);
+    expect(questions.some((question) => question.label.includes("Paperclip inspected"))).toBe(true);
+  });
+
+  it("includes a feedback question about safety clarity", () => {
+    const questions = buildAnalyzeWorkspaceFeedbackQuestions();
+    expect(questions.some((question) => question.label.includes("safety copy"))).toBe(true);
+  });
+
+  it("includes a feedback question about first summary usefulness", () => {
+    const questions = buildAnalyzeWorkspaceFeedbackQuestions();
+    expect(questions.some((question) => question.label.includes("first summary useful"))).toBe(true);
   });
 });
 

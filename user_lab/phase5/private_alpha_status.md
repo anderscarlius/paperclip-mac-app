@@ -14,6 +14,8 @@
 - Approved manifest fields
 - Improved first summary from manifest fields
 - Safety transparency
+- Private alpha feedback prompts
+- Alpha release docs and runbook
 
 ## Partially working
 
@@ -36,6 +38,8 @@
 ## Private alpha promise
 
 Paperclip can safely inspect limited metadata from a local workspace and produce a first conservative summary. It does not yet run AI analysis or modify code.
+
+It also does not send feedback automatically, execute commands, or perform deep repo scanning in the current first-run flow.
 
 ## Who can test this now
 

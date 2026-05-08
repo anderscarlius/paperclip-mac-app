@@ -13,9 +13,10 @@
 11. Show the improved summary.
 12. Approve the manifest fields step.
 13. Show the more useful summary.
-14. Point out safety transparency.
-15. Explain what is not built yet.
-16. Ask the tester for feedback.
+14. Point out safety transparency and the private alpha note.
+15. Show the local-only feedback questions.
+16. Explain what is not built yet.
+17. Ask the tester for feedback.
 
 ## Suggested tester feedback questions
 
@@ -26,3 +27,4 @@
 - Was the first summary useful?
 - What would you expect the next button to do?
 - Would you try this on your own project?
+- Did the feedback questions help you explain what felt clear or unclear?

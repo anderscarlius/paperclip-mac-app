@@ -24,9 +24,11 @@ import { useCompany } from "@/context/CompanyContext";
 import { readLocalFallbackCandidateSignal } from "@/lib/local-fallback-offer";
 import { queryKeys } from "@/lib/queryKeys";
 import {
+  buildAnalyzeWorkspaceFeedbackQuestions,
   buildAnalyzeWorkspaceFlowSteps,
   buildManifestFieldRequest,
   buildAnalyzeWorkspaceResultFromMetadata,
+  buildPrivateAlphaCapabilities,
   buildReadmeExcerptRequest,
   collectAnalyzeWorkspaceTopLevelMetadataFromProvidedEntries,
   findManifestCandidatesFromSnapshot,
@@ -84,6 +86,20 @@ const MOCK_METADATA_ENTRIES: Record<MockStateId, Array<{ name: string; kind: "fi
     { name: "docs", kind: "directory" },
     { name: "src", kind: "directory" },
   ],
+  ready_metadata_error: [
+    { name: "README.md", kind: "file" },
+    { name: "Package.swift", kind: "file" },
+  ],
+  ready_readme_error: [
+    { name: "README.md", kind: "file" },
+    { name: "Package.swift", kind: "file" },
+    { name: "Sources", kind: "directory" },
+  ],
+  ready_manifest_error: [
+    { name: "README.md", kind: "file" },
+    { name: "package.json", kind: "file" },
+    { name: "src", kind: "directory" },
+  ],
 };
 const MOCK_README_EXCERPTS: Record<MockStateId, string | null> = {
   needs_attention: null,
@@ -91,6 +107,9 @@ const MOCK_README_EXCERPTS: Record<MockStateId, string | null> = {
   ready: "# Paperclip App\n\nA Swift workspace for the Paperclip desktop application.\n",
   ready_no_readme: null,
   ready_no_manifest: "# Manifest-free Demo\n\nA workspace without a supported top-level manifest.\n",
+  ready_metadata_error: "# Metadata Error Demo\n\nA workspace used to preview alpha error copy.\n",
+  ready_readme_error: null,
+  ready_manifest_error: "# Manifest Error Demo\n\nA workspace used to preview alpha error copy.\n",
 };
 const MOCK_MANIFEST_FIELDS: Record<MockStateId, AnalyzeWorkspaceManifestFields | null> = {
   needs_attention: null,
@@ -180,6 +199,61 @@ const MOCK_MANIFEST_FIELDS: Record<MockStateId, AnalyzeWorkspaceManifestFields |
     },
   },
   ready_no_manifest: null,
+  ready_metadata_error: {
+    schemaVersion: 1,
+    fieldsType: "analyze_workspace_manifest_fields",
+    filename: "Package.swift",
+    kind: "package_swift",
+    bytesRead: 524,
+    truncated: false,
+    confidence: "medium",
+    fields: {
+      name: "PaperclipDesktop",
+      language: "Swift",
+      packageManagerHints: ["SwiftPM"],
+      targets: ["PaperclipDesktop"],
+      products: ["PaperclipDesktop"],
+      platforms: ["macOS"],
+    },
+    omitted: ["raw manifest content", "executable Swift evaluation"],
+    safety: {
+      readOnly: true,
+      filesChanged: false,
+      commandsRun: false,
+      networkAccessed: false,
+      aiUsed: false,
+      recursiveScan: false,
+      followedSymlink: false,
+    },
+  },
+  ready_readme_error: {
+    schemaVersion: 1,
+    fieldsType: "analyze_workspace_manifest_fields",
+    filename: "Package.swift",
+    kind: "package_swift",
+    bytesRead: 524,
+    truncated: false,
+    confidence: "medium",
+    fields: {
+      name: "PaperclipDesktop",
+      language: "Swift",
+      packageManagerHints: ["SwiftPM"],
+      targets: ["PaperclipDesktop"],
+      products: ["PaperclipDesktop"],
+      platforms: ["macOS"],
+    },
+    omitted: ["raw manifest content", "executable Swift evaluation"],
+    safety: {
+      readOnly: true,
+      filesChanged: false,
+      commandsRun: false,
+      networkAccessed: false,
+      aiUsed: false,
+      recursiveScan: false,
+      followedSymlink: false,
+    },
+  },
+  ready_manifest_error: null,
 };
 
 function severityBadgeVariant(severity: SetupHealthSeverity): "default" | "secondary" | "outline" | "destructive" {
@@ -583,6 +657,8 @@ export function SetupHealth() {
     }
     return "No file contents were read.";
   }, [manifestFields, readmeExcerpt]);
+  const privateAlphaCapabilities = useMemo(() => buildPrivateAlphaCapabilities(), []);
+  const feedbackQuestions = useMemo(() => buildAnalyzeWorkspaceFeedbackQuestions(), []);
 
   const sourceNote = useMemo(() => {
     if (viewMode === "mock") {
@@ -637,6 +713,17 @@ export function SetupHealth() {
       let previewSource: MetadataPreviewSource;
 
       if (viewMode === "mock") {
+        if (selectedState === "ready_metadata_error") {
+          setMetadataCollectionResult({
+            ok: false,
+            snapshot: null,
+            errors: ["Limited metadata collection failed. No files were changed and no commands were run."],
+            warnings: [],
+          });
+          setMetadataPreviewSource("example");
+          setAnalyzeFlowState("collected");
+          return;
+        }
         result = collectAnalyzeWorkspaceTopLevelMetadataFromProvidedEntries({
           workspace: {
             displayName: analyzeSetupState.request.workspace.displayName ?? null,
@@ -675,8 +762,8 @@ export function SetupHealth() {
     } catch (error) {
       setSelectedActionMessage(
         error instanceof Error
-          ? `Metadata collection is not wired yet: ${error.message}`
-          : "Metadata collection is not wired yet.",
+          ? `Limited metadata collection failed. No files were changed and no commands were run. ${error.message}`
+          : "Limited metadata collection failed. No files were changed and no commands were run.",
       );
     } finally {
       setIsCollectingMetadata(false);
@@ -687,7 +774,7 @@ export function SetupHealth() {
     if (!analyzeSetupState.request || !metadataCollectionResult?.ok) return;
     const candidate = readmeCandidates[0];
     if (!candidate) {
-      setSelectedActionMessage("No top-level README candidate was found.");
+      setSelectedActionMessage("No top-level README was found. Paperclip will not search subdirectories automatically in this alpha.");
       return;
     }
 
@@ -707,9 +794,13 @@ export function SetupHealth() {
 
     try {
       if (viewMode === "mock") {
+        if (selectedState === "ready_readme_error") {
+          setSelectedActionMessage("README excerpt could not be read. No other files were opened.");
+          return;
+        }
         const mockContent = MOCK_README_EXCERPTS[selectedState];
         if (!mockContent) {
-          setSelectedActionMessage("No top-level README candidate was found.");
+          setSelectedActionMessage("No top-level README was found. Paperclip will not search subdirectories automatically in this alpha.");
           return;
         }
 
@@ -746,8 +837,8 @@ export function SetupHealth() {
     } catch (error) {
       setSelectedActionMessage(
         error instanceof Error
-          ? `README excerpt could not be read safely: ${error.message}`
-          : "README excerpt could not be read safely.",
+          ? `README excerpt could not be read. No other files were opened. ${error.message}`
+          : "README excerpt could not be read. No other files were opened.",
       );
     } finally {
       setIsReadingReadme(false);
@@ -758,7 +849,7 @@ export function SetupHealth() {
     if (!analyzeSetupState.request || !metadataCollectionResult?.ok) return;
     const candidate = manifestCandidates[0];
     if (!candidate) {
-      setSelectedActionMessage("No supported top-level manifest candidate was found.");
+      setSelectedActionMessage("No supported top-level manifest was found. Supported manifests in this alpha: package.json, pyproject.toml, Cargo.toml, go.mod, Package.swift.");
       return;
     }
 
@@ -778,9 +869,13 @@ export function SetupHealth() {
 
     try {
       if (viewMode === "mock") {
+        if (selectedState === "ready_manifest_error") {
+          setSelectedActionMessage("Manifest fields could not be read. Raw manifest content was not exposed.");
+          return;
+        }
         const mockManifest = MOCK_MANIFEST_FIELDS[selectedState];
         if (!mockManifest) {
-          setSelectedActionMessage("No supported top-level manifest candidate was found.");
+          setSelectedActionMessage("No supported top-level manifest was found. Supported manifests in this alpha: package.json, pyproject.toml, Cargo.toml, go.mod, Package.swift.");
           return;
         }
         setManifestFields(mockManifest);
@@ -800,8 +895,8 @@ export function SetupHealth() {
     } catch (error) {
       setSelectedActionMessage(
         error instanceof Error
-          ? `Manifest fields could not be read safely: ${error.message}`
-          : "Manifest fields could not be read safely.",
+          ? `Manifest fields could not be read. Raw manifest content was not exposed. ${error.message}`
+          : "Manifest fields could not be read. Raw manifest content was not exposed.",
       );
     } finally {
       setIsReadingManifest(false);
@@ -899,6 +994,50 @@ export function SetupHealth() {
               {analyzeHelperCopy}
             </div>
           ) : null}
+
+          <div className="rounded-md border border-sky-500/30 bg-sky-500/5 px-3 py-3">
+            <div className="text-sm font-medium text-foreground">Private alpha</div>
+            <div className="mt-1 text-sm text-muted-foreground">
+              Paperclip can safely inspect limited metadata from a local workspace and produce a conservative first summary. It does not yet run AI analysis, edit code, or execute commands.
+            </div>
+            <Collapsible>
+              <div className="mt-3 flex flex-col gap-3">
+                <CollapsibleTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="justify-start px-0 text-muted-foreground hover:text-foreground"
+                  >
+                    What works today
+                  </Button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="space-y-3">
+                  <div>
+                    <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Working</div>
+                    <div className="mt-1 space-y-1 text-sm text-muted-foreground">
+                      {privateAlphaCapabilities
+                        .filter((capability) => capability.status === "working")
+                        .slice(0, 5)
+                        .map((capability) => (
+                          <div key={capability.label}>{capability.label} · {capability.description}</div>
+                        ))}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Still not built</div>
+                    <div className="mt-1 space-y-1 text-sm text-muted-foreground">
+                      {privateAlphaCapabilities
+                        .filter((capability) => capability.status === "not_built")
+                        .slice(0, 5)
+                        .map((capability) => (
+                          <div key={capability.label}>{capability.label} · {capability.description}</div>
+                        ))}
+                    </div>
+                  </div>
+                </CollapsibleContent>
+              </div>
+            </Collapsible>
+          </div>
 
           {workspaceName && workspaceName !== "None" ? (
             <div className="rounded-md border border-border/70 bg-background/70 px-3 py-2 text-sm text-muted-foreground">
@@ -1360,7 +1499,10 @@ export function SetupHealth() {
                                 </Button>
                               </div>
                             ) : (
-                              <div className="mt-2">No top-level README candidate was found.</div>
+                              <div className="mt-2 space-y-1">
+                                <div>No top-level README was found.</div>
+                                <div>Paperclip will not search subdirectories automatically in this alpha.</div>
+                              </div>
                             )}
 
                             {readmeExcerpt ? (
@@ -1413,7 +1555,10 @@ export function SetupHealth() {
                                 </Button>
                               </div>
                             ) : (
-                              <div className="mt-2">No supported top-level manifest candidate was found.</div>
+                              <div className="mt-2 space-y-1">
+                                <div>No supported top-level manifest was found.</div>
+                                <div>Supported manifests in this alpha: package.json, pyproject.toml, Cargo.toml, go.mod, Package.swift.</div>
+                              </div>
                             )}
 
                             {manifestFields ? (
@@ -1445,13 +1590,33 @@ export function SetupHealth() {
                               <div>Inspect selected dependency details — coming later</div>
                             </div>
                           </div>
+
+                          <div className="rounded-md border border-border/70 bg-background/70 px-3 py-3">
+                            <div className="font-medium text-foreground">Help improve this first run</div>
+                            <div className="mt-1 text-muted-foreground">
+                              This private alpha is testing whether the first workspace flow feels clear, useful, and safe.
+                            </div>
+                            <div className="mt-2 text-muted-foreground">No feedback is sent automatically.</div>
+                            <div className="text-muted-foreground">Use these questions when sharing feedback with the Paperclip team.</div>
+                            <div className="mt-3 space-y-2 text-muted-foreground">
+                              {feedbackQuestions.map((question) => (
+                                <div key={question.id}>
+                                  <div>{question.label}</div>
+                                  {question.helperText ? (
+                                    <div className="text-xs">{question.helperText}</div>
+                                  ) : null}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
                         </div>
                       </div>
                     ) : null}
                   </>
                 ) : (
                   <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-3 text-sm text-muted-foreground">
-                    <div className="font-medium text-foreground">Metadata collection could not continue</div>
+                    <div className="font-medium text-foreground">Limited metadata collection failed.</div>
+                    <div className="mt-1">No files were changed and no commands were run.</div>
                     <div className="mt-2 space-y-1">
                       {metadataCollectionResult.errors.map((error) => (
                         <div key={error}>{error}</div>
