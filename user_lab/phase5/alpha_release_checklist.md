@@ -8,6 +8,7 @@
 - UI typecheck passing
 - server typecheck passing
 - demo flow clicked through locally
+- first successful run checklist visible
 - no `dist` artifacts committed
 - no secrets committed
 
@@ -18,6 +19,7 @@
 - show safe metadata collection
 - show README approval step
 - show manifest approval step
+- show first successful run checklist
 - ask feedback questions
 
 ## Not yet supported

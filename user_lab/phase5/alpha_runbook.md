@@ -27,7 +27,8 @@ Help an early tester complete the first Paperclip flow, understand the safety mo
 8. Walk through the first summary.
 9. Optionally click `Read small README excerpt`.
 10. Optionally click `Read selected manifest fields`.
-11. Review the improved summary and the feedback questions.
+11. Confirm the `First successful run` checklist state.
+12. Review the improved summary and the feedback questions.
 
 ## What to test
 
@@ -36,6 +37,7 @@ Help an early tester complete the first Paperclip flow, understand the safety mo
 - usefulness of the first summary
 - trust in the README approval step
 - trust in the manifest approval step
+- clarity of the first successful run checklist
 - understanding of what remains unwired
 
 ## What not to test yet
@@ -67,3 +69,5 @@ Help an early tester complete the first Paperclip flow, understand the safety mo
 ## How to report feedback
 
 Use the in-app feedback questions as a guide, then copy answers into the alpha tester feedback template.
+
+The tester handoff and troubleshooting notes can be sent together with this runbook.

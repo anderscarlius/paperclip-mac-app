@@ -509,6 +509,8 @@ describe("SetupHealth", () => {
     expect(container.textContent).toContain("Developer Tools");
     expect(container.textContent).toContain("Runtime");
     expect(container.textContent).toContain("Private alpha");
+    expect(container.textContent).toContain("First successful run");
+    expect(container.textContent).toContain("This checklist tracks the private-alpha first-run flow.");
     expect(container.textContent).toContain("does not yet run AI analysis");
     expect(container.textContent).toContain("edit code");
     expect(container.textContent).toContain("execute commands");
@@ -743,13 +745,19 @@ describe("SetupHealth", () => {
     });
 
     expect(container.textContent).toContain("Analyze Workspace flow");
+    expect(container.textContent).toContain("First successful run");
     expect(container.textContent).toContain("Request prepared");
     expect(container.textContent).toContain("Limited metadata collected");
+    expect(container.textContent).toContain("Workspace selected");
+    expect(container.textContent).toContain("Read-only flow confirmed");
+    expect(container.textContent).toContain("README and manifest reads are optional improvement steps.");
     expect(container.textContent).toContain("Limited read-only metadata collected");
     expect(container.textContent).toContain("No file contents were read.");
     expect(container.textContent).toContain("No commands were run.");
     expect(container.textContent).toContain("No recursive scan was performed.");
     expect(container.textContent).toContain("First workspace summary");
+    expect(container.textContent).toContain("Private alpha first run complete");
+    expect(container.textContent).toContain("Paperclip completed the safe first-run flow without running commands or using AI.");
     expect(container.textContent).toContain("This first result is based only on limited top-level metadata.");
     expect(container.textContent).toContain("No AI was used.");
     expect(container.textContent).toContain("Project summary");
@@ -762,6 +770,9 @@ describe("SetupHealth", () => {
     expect(container.textContent).toContain("No feedback is sent automatically.");
     expect(container.textContent).toContain("Did you understand what Paperclip inspected?");
     expect(container.textContent).toContain("Read selected manifest fields");
+    expect(container.textContent).toContain("README excerpt read");
+    expect(container.textContent).toContain("Manifest fields read");
+    expect(container.textContent).toContain("Optional improvement step");
     expect(container.textContent).toContain("Improve summary with Cloud AI — coming later");
     expect(container.textContent).toContain("Inspect project structure — coming later");
     expect(container.textContent).not.toContain("tests passed");

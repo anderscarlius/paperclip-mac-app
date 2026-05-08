@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildAnalyzeWorkspaceFeedbackQuestions,
   buildAnalyzeWorkspaceFlowSteps,
+  buildFirstSuccessfulRunState,
   buildPrivateAlphaCapabilities,
   buildManifestFieldRequest,
   buildAnalyzeWorkspaceRequest,
@@ -155,6 +156,118 @@ describe("private alpha helpers", () => {
   it("includes a feedback question about first summary usefulness", () => {
     const questions = buildAnalyzeWorkspaceFeedbackQuestions();
     expect(questions.some((question) => question.label.includes("first summary useful"))).toBe(true);
+  });
+});
+
+describe("first successful run helpers", () => {
+  it("is incomplete initially", () => {
+    const state = buildFirstSuccessfulRunState({
+      workspaceSelected: false,
+      readOnlyConfirmed: false,
+      requestPrepared: false,
+      metadataCollected: false,
+      firstSummaryShown: false,
+      readmeExcerptRead: false,
+      manifestFieldsRead: false,
+      feedbackPromptShown: false,
+    });
+
+    expect(state.complete).toBe(false);
+    expect(state.title).toBe("First run in progress");
+  });
+
+  it("becomes complete when required steps are complete", () => {
+    const state = buildFirstSuccessfulRunState({
+      workspaceSelected: true,
+      readOnlyConfirmed: true,
+      requestPrepared: true,
+      metadataCollected: true,
+      firstSummaryShown: true,
+      readmeExcerptRead: false,
+      manifestFieldsRead: false,
+      feedbackPromptShown: false,
+    });
+
+    expect(state.complete).toBe(true);
+    expect(state.title).toBe("Private alpha first run complete");
+  });
+
+  it("keeps README excerpt optional", () => {
+    const state = buildFirstSuccessfulRunState({
+      workspaceSelected: true,
+      readOnlyConfirmed: true,
+      requestPrepared: true,
+      metadataCollected: true,
+      firstSummaryShown: true,
+      readmeExcerptRead: false,
+      manifestFieldsRead: false,
+      feedbackPromptShown: false,
+    });
+
+    expect(state.items.find((item) => item.id === "readme_excerpt_optional")?.required).toBe(false);
+    expect(state.items.find((item) => item.id === "readme_excerpt_optional")?.status).toBe("optional");
+  });
+
+  it("keeps manifest fields optional", () => {
+    const state = buildFirstSuccessfulRunState({
+      workspaceSelected: true,
+      readOnlyConfirmed: true,
+      requestPrepared: true,
+      metadataCollected: true,
+      firstSummaryShown: true,
+      readmeExcerptRead: false,
+      manifestFieldsRead: false,
+      feedbackPromptShown: false,
+    });
+
+    expect(state.items.find((item) => item.id === "manifest_fields_optional")?.required).toBe(false);
+    expect(state.items.find((item) => item.id === "manifest_fields_optional")?.status).toBe("optional");
+  });
+
+  it("does not require the feedback prompt for completion", () => {
+    const state = buildFirstSuccessfulRunState({
+      workspaceSelected: true,
+      readOnlyConfirmed: true,
+      requestPrepared: true,
+      metadataCollected: true,
+      firstSummaryShown: true,
+      readmeExcerptRead: false,
+      manifestFieldsRead: false,
+      feedbackPromptShown: false,
+    });
+
+    expect(state.complete).toBe(true);
+    expect(state.items.find((item) => item.id === "feedback_prompt_shown")?.required).toBe(false);
+  });
+
+  it("uses the complete-state title when the core flow succeeds", () => {
+    const state = buildFirstSuccessfulRunState({
+      workspaceSelected: true,
+      readOnlyConfirmed: true,
+      requestPrepared: true,
+      metadataCollected: true,
+      firstSummaryShown: true,
+      readmeExcerptRead: true,
+      manifestFieldsRead: true,
+      feedbackPromptShown: true,
+    });
+
+    expect(state.title).toBe("Private alpha first run complete");
+  });
+
+  it("uses the in-progress title before required steps are done", () => {
+    const state = buildFirstSuccessfulRunState({
+      workspaceSelected: true,
+      readOnlyConfirmed: true,
+      requestPrepared: false,
+      metadataCollected: false,
+      firstSummaryShown: false,
+      readmeExcerptRead: false,
+      manifestFieldsRead: false,
+      feedbackPromptShown: false,
+    });
+
+    expect(state.title).toBe("First run in progress");
   });
 });
 

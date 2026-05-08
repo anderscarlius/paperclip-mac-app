@@ -111,3 +111,9 @@ Change: Added private-alpha delivery polish with clearer scope copy, local-only 
 Expected effect: Make the first Paperclip experience easier to demo, easier to trust, and easier to evaluate with early users without adding any new execution behavior.
 Observed result: Setup Health now frames the product as a private alpha, explains what the first flow can and cannot do, surfaces reusable feedback questions, and handles missing README/manifest plus read failures more clearly.
 Next action: Run focused tests and typechecks, then review the diff, commit, and push Phase 5O.
+
+Time: 2026-05-08T15:40:00+0200
+Change: Added a first successful run checklist model, in-app checklist copy, and tester handoff/troubleshooting documents for the private alpha.
+Expected effect: Make it easier for a tester to tell whether the safe first-run flow succeeded and what to report back after trying the product.
+Observed result: Setup Health now marks required versus optional first-run milestones, can declare the safe alpha flow complete, and is backed by tester-facing docs that explain handoff, troubleshooting, and success criteria.
+Next action: Run focused tests and typechecks, then review the diff, commit, and push Phase 5P.

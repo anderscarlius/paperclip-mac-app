@@ -26,6 +26,7 @@ import { queryKeys } from "@/lib/queryKeys";
 import {
   buildAnalyzeWorkspaceFeedbackQuestions,
   buildAnalyzeWorkspaceFlowSteps,
+  buildFirstSuccessfulRunState,
   buildManifestFieldRequest,
   buildAnalyzeWorkspaceResultFromMetadata,
   buildPrivateAlphaCapabilities,
@@ -46,6 +47,7 @@ import {
   type AnalyzeWorkspaceResult,
   type AnalyzeWorkspaceResultValidationResult,
   type AnalyzeWorkspaceSetupState,
+  type FirstSuccessfulRunState,
   type SetupHealthCard,
   type SetupHealthDiagnostics,
   type SetupHealthSeverity,
@@ -679,6 +681,16 @@ export function SetupHealth() {
   );
   const workspacePath = workspaceCard?.advancedDetails.find((detail) => detail.label === "Selected path")?.value ?? null;
   const workspaceName = workspaceCard?.advancedDetails.find((detail) => detail.label === "Workspace")?.value ?? null;
+  const firstSuccessfulRunState = useMemo<FirstSuccessfulRunState>(() => buildFirstSuccessfulRunState({
+    workspaceSelected: Boolean(workspaceName && workspaceName !== "None"),
+    readOnlyConfirmed: analyzeFlowState === "ready" || analyzeFlowState === "prepared" || analyzeFlowState === "collected",
+    requestPrepared: analyzeFlowState === "prepared" || analyzeFlowState === "collected",
+    metadataCollected: metadataCollectionResult?.ok === true,
+    firstSummaryShown: firstWorkspaceResult !== null,
+    readmeExcerptRead: readmeExcerpt !== null,
+    manifestFieldsRead: manifestFields !== null,
+    feedbackPromptShown: firstWorkspaceResult !== null,
+  }), [analyzeFlowState, firstWorkspaceResult, manifestFields, metadataCollectionResult, readmeExcerpt, workspaceName]);
   const analyzeHelperCopy = useMemo(() => {
     if (viewModel.primaryAction.disabled) {
       return "Choose a workspace before starting.";
@@ -1069,6 +1081,44 @@ export function SetupHealth() {
                     </Badge>
                   </div>
                   <div className="mt-1 text-muted-foreground">{step.description}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-md border border-border/70 bg-background/70 px-3 py-3">
+            <div className="text-sm font-medium text-foreground">First successful run</div>
+            <div className="mt-1 text-sm text-muted-foreground">
+              This checklist tracks the private-alpha first-run flow.
+            </div>
+            <div className="mt-2 text-sm text-muted-foreground">
+              README and manifest reads are optional improvement steps.
+            </div>
+            <div className="mt-3 rounded-md border border-sky-500/20 bg-sky-500/5 px-3 py-3 text-sm text-muted-foreground">
+              <div className="font-medium text-foreground">{firstSuccessfulRunState.title}</div>
+              <div className="mt-1">{firstSuccessfulRunState.summary}</div>
+            </div>
+            <div className="mt-4 space-y-2">
+              {firstSuccessfulRunState.items.map((item) => (
+                <div
+                  key={item.id}
+                  className="rounded-md border border-border/60 bg-background/80 px-3 py-2 text-sm"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="font-medium text-foreground">{item.label}</div>
+                    <Badge
+                      variant={item.status === "complete" ? "default" : item.status === "current" ? "secondary" : "outline"}
+                    >
+                      {item.status === "not_started"
+                        ? "Not started"
+                        : item.status === "optional"
+                          ? "Optional"
+                          : item.status === "current"
+                            ? "Current"
+                            : "Complete"}
+                    </Badge>
+                  </div>
+                  <div className="mt-1 text-muted-foreground">{item.description}</div>
                 </div>
               ))}
             </div>

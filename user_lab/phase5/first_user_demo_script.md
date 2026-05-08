@@ -13,10 +13,11 @@
 11. Show the improved summary.
 12. Approve the manifest fields step.
 13. Show the more useful summary.
-14. Point out safety transparency and the private alpha note.
-15. Show the local-only feedback questions.
-16. Explain what is not built yet.
-17. Ask the tester for feedback.
+14. Show the first successful run checklist.
+15. Point out safety transparency and the private alpha note.
+16. Show the local-only feedback questions.
+17. Explain what is not built yet.
+18. Ask the tester for feedback.
 
 ## Suggested tester feedback questions
 
@@ -25,6 +26,7 @@
 - Did you trust the README read step?
 - Did you trust the manifest-field read step?
 - Was the first summary useful?
+- Did the first successful run checklist match what you thought success meant?
 - What would you expect the next button to do?
 - Would you try this on your own project?
 - Did the feedback questions help you explain what felt clear or unclear?

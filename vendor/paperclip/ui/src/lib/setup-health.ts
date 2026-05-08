@@ -456,6 +456,29 @@ export type AnalyzeWorkspaceFeedbackQuestion = {
   helperText?: string;
 };
 
+export type FirstSuccessfulRunChecklistItem = {
+  id:
+    | "workspace_selected"
+    | "read_only_confirmed"
+    | "request_prepared"
+    | "metadata_collected"
+    | "first_summary_shown"
+    | "readme_excerpt_optional"
+    | "manifest_fields_optional"
+    | "feedback_prompt_shown";
+  label: string;
+  status: "complete" | "current" | "optional" | "not_started";
+  required: boolean;
+  description: string;
+};
+
+export type FirstSuccessfulRunState = {
+  complete: boolean;
+  title: string;
+  summary: string;
+  items: FirstSuccessfulRunChecklistItem[];
+};
+
 export type SetupHealthDiagnostics = {
   cloudAi?: {
     authStatus?: "connected" | "missing" | "unknown";
@@ -1323,6 +1346,118 @@ export function buildAnalyzeWorkspaceFeedbackQuestions(): AnalyzeWorkspaceFeedba
       helperText: "This helps estimate real first-user trust.",
     },
   ];
+}
+
+export function buildFirstSuccessfulRunState(input: {
+  workspaceSelected: boolean;
+  readOnlyConfirmed: boolean;
+  requestPrepared: boolean;
+  metadataCollected: boolean;
+  firstSummaryShown: boolean;
+  readmeExcerptRead: boolean;
+  manifestFieldsRead: boolean;
+  feedbackPromptShown: boolean;
+}): FirstSuccessfulRunState {
+  const {
+    workspaceSelected,
+    readOnlyConfirmed,
+    requestPrepared,
+    metadataCollected,
+    firstSummaryShown,
+    readmeExcerptRead,
+    manifestFieldsRead,
+    feedbackPromptShown,
+  } = input;
+
+  const complete = workspaceSelected
+    && readOnlyConfirmed
+    && requestPrepared
+    && metadataCollected
+    && firstSummaryShown;
+
+  const items: FirstSuccessfulRunChecklistItem[] = [
+    {
+      id: "workspace_selected",
+      label: "Workspace selected",
+      status: workspaceSelected ? "complete" : "current",
+      required: true,
+      description: "A local workspace is selected before the private-alpha flow begins.",
+    },
+    {
+      id: "read_only_confirmed",
+      label: "Read-only flow confirmed",
+      status: readOnlyConfirmed
+        ? "complete"
+        : workspaceSelected
+          ? "current"
+          : "not_started",
+      required: true,
+      description: "The user confirms that the first run is safe and read-only.",
+    },
+    {
+      id: "request_prepared",
+      label: "Request prepared",
+      status: requestPrepared
+        ? "complete"
+        : readOnlyConfirmed
+          ? "current"
+          : "not_started",
+      required: true,
+      description: "Paperclip prepares a validated request without starting execution.",
+    },
+    {
+      id: "metadata_collected",
+      label: "Limited metadata collected",
+      status: metadataCollected
+        ? "complete"
+        : requestPrepared
+          ? "current"
+          : "not_started",
+      required: true,
+      description: "Paperclip collects only immediate top-level names and types.",
+    },
+    {
+      id: "first_summary_shown",
+      label: "First workspace summary shown",
+      status: firstSummaryShown
+        ? "complete"
+        : metadataCollected
+          ? "current"
+          : "not_started",
+      required: true,
+      description: "A conservative first summary is visible together with safety transparency.",
+    },
+    {
+      id: "readme_excerpt_optional",
+      label: "README excerpt read",
+      status: readmeExcerptRead ? "complete" : "optional",
+      required: false,
+      description: "Optional improvement step: read one small approved top-level README excerpt.",
+    },
+    {
+      id: "manifest_fields_optional",
+      label: "Manifest fields read",
+      status: manifestFieldsRead ? "complete" : "optional",
+      required: false,
+      description: "Optional improvement step: read selected safe fields from one approved top-level manifest.",
+    },
+    {
+      id: "feedback_prompt_shown",
+      label: "Feedback prompt shown",
+      status: feedbackPromptShown ? "complete" : "optional",
+      required: false,
+      description: "Optional follow-up step: review the private-alpha feedback questions.",
+    },
+  ];
+
+  return {
+    complete,
+    title: complete ? "Private alpha first run complete" : "First run in progress",
+    summary: complete
+      ? "Paperclip completed the safe first-run flow without running commands or using AI."
+      : "Complete the safe Analyze Workspace flow to finish the private-alpha first run.",
+    items,
+  };
 }
 
 export function buildAnalyzeWorkspaceMetadataSnapshotFromEntries(input: {
