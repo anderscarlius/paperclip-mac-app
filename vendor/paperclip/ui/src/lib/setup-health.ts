@@ -509,6 +509,33 @@ export type FirstSuccessfulRunState = {
   items: FirstSuccessfulRunChecklistItem[];
 };
 
+export type PaperclipDemoReadinessStatus =
+  | "ready"
+  | "almost_ready"
+  | "needs_attention";
+
+export type PaperclipDemoReadinessItem = {
+  id:
+    | "startup_ready"
+    | "setup_health_ready"
+    | "workspace_ready"
+    | "analyze_flow_available"
+    | "safety_copy_visible"
+    | "first_run_checklist_available";
+  label: string;
+  status: "pass" | "warning" | "fail";
+  description: string;
+};
+
+export type PaperclipDemoReadinessState = {
+  status: PaperclipDemoReadinessStatus;
+  title: string;
+  summary: string;
+  items: PaperclipDemoReadinessItem[];
+  nextAction: string;
+  privateAlphaNote: string;
+};
+
 export type SetupHealthDiagnostics = {
   cloudAi?: {
     authStatus?: "connected" | "missing" | "unknown";
@@ -1604,6 +1631,106 @@ export function buildFirstSuccessfulRunState(input: {
       ? "Paperclip completed the safe first-run flow without running commands or using AI."
       : "Complete the safe Analyze Workspace flow to finish the private-alpha first run.",
     items,
+  };
+}
+
+export function buildPaperclipDemoReadinessState(input: {
+  startupReady: boolean;
+  diagnosticsAvailable: boolean;
+  workspaceSelected: boolean;
+  analyzeAvailable: boolean;
+  safetyCopyVisible: boolean;
+  firstRunChecklistAvailable: boolean;
+}): PaperclipDemoReadinessState {
+  const {
+    startupReady,
+    diagnosticsAvailable,
+    workspaceSelected,
+    analyzeAvailable,
+    safetyCopyVisible,
+    firstRunChecklistAvailable,
+  } = input;
+
+  const items: PaperclipDemoReadinessItem[] = [
+    {
+      id: "startup_ready",
+      label: "Startup ready",
+      status: startupReady ? "pass" : "fail",
+      description: startupReady
+        ? "Startup reached Setup Health readiness."
+        : "Startup is still waiting for readiness signals.",
+    },
+    {
+      id: "setup_health_ready",
+      label: "Setup Health ready",
+      status: diagnosticsAvailable ? "pass" : startupReady ? "warning" : "fail",
+      description: diagnosticsAvailable
+        ? "Setup Health has enough readiness information for a walkthrough."
+        : "Setup Health is still relying on limited readiness signals.",
+    },
+    {
+      id: "workspace_ready",
+      label: "Workspace ready",
+      status: workspaceSelected ? "pass" : startupReady ? "warning" : "fail",
+      description: workspaceSelected
+        ? "A workspace is selected or understandable for the walkthrough."
+        : "Select or confirm a workspace before the first walkthrough.",
+    },
+    {
+      id: "analyze_flow_available",
+      label: "Analyze flow available",
+      status: analyzeAvailable ? "pass" : startupReady ? "warning" : "fail",
+      description: analyzeAvailable
+        ? "The safe Analyze Workspace flow can be started."
+        : "Analyze Workspace is still blocked by readiness or workspace state.",
+    },
+    {
+      id: "safety_copy_visible",
+      label: "Safety copy visible",
+      status: safetyCopyVisible ? "pass" : "warning",
+      description: safetyCopyVisible
+        ? "The operator can explain the private-alpha safety model."
+        : "Safety messaging should be visible before a walkthrough starts.",
+    },
+    {
+      id: "first_run_checklist_available",
+      label: "First-run checklist available",
+      status: firstRunChecklistAvailable ? "pass" : "warning",
+      description: firstRunChecklistAvailable
+        ? "The first successful run checklist is available during the walkthrough."
+        : "The first successful run checklist should be available before demoing.",
+    },
+  ];
+
+  if (!startupReady || !diagnosticsAvailable) {
+    return {
+      status: "needs_attention",
+      title: "Demo needs attention",
+      summary: "Paperclip is still waiting for readiness signals.",
+      items,
+      nextAction: "Review Startup status and Setup Health before starting the walkthrough.",
+      privateAlphaNote: "This is private alpha readiness, not production readiness.",
+    };
+  }
+
+  if (!workspaceSelected || !analyzeAvailable) {
+    return {
+      status: "almost_ready",
+      title: "Almost ready to demo",
+      summary: "Paperclip is running, but a workspace must be selected before the first walkthrough.",
+      items,
+      nextAction: "Select or confirm a workspace, then run Analyze this workspace.",
+      privateAlphaNote: "This is private alpha readiness, not production readiness.",
+    };
+  }
+
+  return {
+    status: "ready",
+    title: "Ready to demo",
+    summary: "Paperclip is ready for a private-alpha first-run walkthrough.",
+    items,
+    nextAction: "Start with Analyze this workspace.",
+    privateAlphaNote: "This is private alpha readiness, not production readiness.",
   };
 }
 

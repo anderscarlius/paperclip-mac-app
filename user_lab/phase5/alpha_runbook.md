@@ -7,6 +7,7 @@ Help an early tester complete the first Paperclip flow, understand the safety mo
 ## Current capabilities
 
 - startup transparency panel
+- ready-to-demo panel
 - Setup Health
 - workspace readiness checks
 - path health warnings
@@ -20,17 +21,18 @@ Help an early tester complete the first Paperclip flow, understand the safety mo
 
 1. Open Paperclip.
 2. Show the startup status panel and wait until Setup Health is ready.
-3. Show Setup Health and the private alpha note.
-4. Confirm the selected workspace.
-5. Click `Analyze this workspace`.
-6. Explain the read-only confirmation step.
-7. Click `Prepare request`.
-8. Click `Collect limited metadata`.
-9. Walk through the first summary.
-10. Optionally click `Read small README excerpt`.
-11. Optionally click `Read selected manifest fields`.
-12. Confirm the `First successful run` checklist state.
-13. Review the improved summary and the feedback questions.
+3. Check the `Ready to demo` panel.
+4. Show Setup Health and the private alpha note.
+5. Confirm the selected workspace.
+6. Click `Analyze this workspace`.
+7. Explain the read-only confirmation step.
+8. Click `Prepare request`.
+9. Click `Collect limited metadata`.
+10. Walk through the first summary.
+11. Optionally click `Read small README excerpt`.
+12. Optionally click `Read selected manifest fields`.
+13. Confirm the `First successful run` checklist state.
+14. Review the improved summary and the feedback questions.
 
 ## What to test
 
@@ -41,6 +43,7 @@ Help an early tester complete the first Paperclip flow, understand the safety mo
 - trust in the manifest approval step
 - clarity of the first successful run checklist
 - clarity of startup status
+- clarity of demo readiness
 - understanding of what remains unwired
 
 ## What not to test yet

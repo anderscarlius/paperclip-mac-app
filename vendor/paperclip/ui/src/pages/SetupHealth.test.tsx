@@ -503,6 +503,9 @@ describe("SetupHealth", () => {
 
     expect(container.textContent).toContain("Setup Health");
     expect(container.textContent).toContain("Startup status");
+    expect(container.textContent).toContain("Demo needs attention");
+    expect(container.textContent).toContain("This is private alpha readiness, not production readiness.");
+    expect(container.textContent).toContain("Review Startup status and Setup Health before starting the walkthrough.");
     expect(container.textContent).toContain("Your project files are not modified during startup.");
     expect(container.textContent).toContain("Desktop app started");
     expect(container.textContent).toContain("Checking Paperclip runtime");
@@ -510,6 +513,11 @@ describe("SetupHealth", () => {
     expect(container.textContent).toContain("Loading workspace state");
     expect(container.textContent).toContain("Setup Health ready");
     expect(container.textContent).toContain("will not use local AI automatically");
+    expect(container.textContent).toContain("Recommended alpha walkthrough");
+    expect(container.textContent).toContain("Collect limited metadata");
+    expect(container.textContent).toContain("Optionally approve README excerpt");
+    expect(container.textContent).toContain("Optionally approve manifest fields");
+    expect(container.textContent).toContain("Share feedback");
     expect(container.textContent).toContain("Analyze this workspace");
     expect(container.textContent).toContain("Cloud AI");
     expect(container.textContent).toContain("Local AI");
@@ -545,6 +553,8 @@ describe("SetupHealth", () => {
 
     expect(container.textContent).toContain("Startup complete");
     expect(container.textContent).toContain("Setup Health is ready to guide the first safe run.");
+    expect(container.textContent).toContain("Ready to demo");
+    expect(container.textContent).toContain("Start with Analyze this workspace.");
 
     act(() => {
       root.unmount();
@@ -798,6 +808,8 @@ describe("SetupHealth", () => {
 
     expect(container.textContent).toContain("Analyze Workspace flow");
     expect(container.textContent).toContain("First successful run");
+    expect(container.textContent).toContain("Ready to demo");
+    expect(container.textContent).toContain("Start with Analyze this workspace.");
     expect(container.textContent).toContain("Request prepared");
     expect(container.textContent).toContain("Limited metadata collected");
     expect(container.textContent).toContain("Workspace selected");
@@ -817,6 +829,7 @@ describe("SetupHealth", () => {
     expect(container.textContent).toContain("Swift");
     expect(container.textContent).toContain("What I inspected");
     expect(container.textContent).toContain("What I did not inspect");
+    expect(container.textContent).toContain("Recommended alpha walkthrough");
     expect(container.textContent).toContain("What’s next?");
     expect(container.textContent).toContain("Help improve this first run");
     expect(container.textContent).toContain("No feedback is sent automatically.");
@@ -825,6 +838,7 @@ describe("SetupHealth", () => {
     expect(container.textContent).toContain("README excerpt read");
     expect(container.textContent).toContain("Manifest fields read");
     expect(container.textContent).toContain("Optional improvement step");
+    expect(container.textContent).toContain("Share feedback");
     expect(container.textContent).toContain("Improve summary with Cloud AI — coming later");
     expect(container.textContent).toContain("Inspect project structure — coming later");
     expect(container.textContent).not.toContain("tests passed");

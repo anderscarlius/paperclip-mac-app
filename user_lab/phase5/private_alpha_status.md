@@ -17,6 +17,7 @@
 - Private alpha feedback prompts
 - Alpha release docs and runbook
 - Startup transparency panel
+- Ready-to-demo panel
 
 ## Partially working
 
@@ -25,6 +26,7 @@
 - Early-user onboarding
 - Cloud/Local AI status visibility
 - Startup messaging precision
+- Demo operator clarity
 
 ## Not built yet
 

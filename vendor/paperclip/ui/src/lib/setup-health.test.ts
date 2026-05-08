@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildAnalyzeWorkspaceFeedbackQuestions,
+  buildPaperclipDemoReadinessState,
   buildAnalyzeWorkspaceFlowSteps,
   buildFirstSuccessfulRunState,
   buildPaperclipStartupState,
@@ -249,6 +250,116 @@ describe("startup transparency helpers", () => {
     });
 
     expect(state.steps.find((step) => step.id === "workspace_state")?.status).toBe("needs_attention");
+  });
+});
+
+describe("demo readiness helpers", () => {
+  it("is ready when all core inputs are true", () => {
+    const state = buildPaperclipDemoReadinessState({
+      startupReady: true,
+      diagnosticsAvailable: true,
+      workspaceSelected: true,
+      analyzeAvailable: true,
+      safetyCopyVisible: true,
+      firstRunChecklistAvailable: true,
+    });
+
+    expect(state.status).toBe("ready");
+    expect(state.title).toBe("Ready to demo");
+  });
+
+  it("is almost ready when startup and setup are ready but workspace is missing", () => {
+    const state = buildPaperclipDemoReadinessState({
+      startupReady: true,
+      diagnosticsAvailable: true,
+      workspaceSelected: false,
+      analyzeAvailable: false,
+      safetyCopyVisible: true,
+      firstRunChecklistAvailable: true,
+    });
+
+    expect(state.status).toBe("almost_ready");
+    expect(state.title).toBe("Almost ready to demo");
+  });
+
+  it("needs attention when startup is not ready", () => {
+    const state = buildPaperclipDemoReadinessState({
+      startupReady: false,
+      diagnosticsAvailable: false,
+      workspaceSelected: false,
+      analyzeAvailable: false,
+      safetyCopyVisible: true,
+      firstRunChecklistAvailable: true,
+    });
+
+    expect(state.status).toBe("needs_attention");
+    expect(state.title).toBe("Demo needs attention");
+  });
+
+  it("includes the private alpha note", () => {
+    const state = buildPaperclipDemoReadinessState({
+      startupReady: true,
+      diagnosticsAvailable: true,
+      workspaceSelected: true,
+      analyzeAvailable: true,
+      safetyCopyVisible: true,
+      firstRunChecklistAvailable: true,
+    });
+
+    expect(state.privateAlphaNote).toBe("This is private alpha readiness, not production readiness.");
+  });
+
+  it("does not mention production readiness as achieved", () => {
+    const state = buildPaperclipDemoReadinessState({
+      startupReady: true,
+      diagnosticsAvailable: true,
+      workspaceSelected: true,
+      analyzeAvailable: true,
+      safetyCopyVisible: true,
+      firstRunChecklistAvailable: true,
+    });
+
+    expect(state.summary).not.toContain("production ready");
+    expect(state.privateAlphaNote).toContain("not production readiness");
+  });
+
+  it("uses the ready-state next action when ready", () => {
+    const state = buildPaperclipDemoReadinessState({
+      startupReady: true,
+      diagnosticsAvailable: true,
+      workspaceSelected: true,
+      analyzeAvailable: true,
+      safetyCopyVisible: true,
+      firstRunChecklistAvailable: true,
+    });
+
+    expect(state.nextAction).toBe("Start with Analyze this workspace.");
+  });
+
+  it("uses the missing-workspace next action when almost ready", () => {
+    const state = buildPaperclipDemoReadinessState({
+      startupReady: true,
+      diagnosticsAvailable: true,
+      workspaceSelected: false,
+      analyzeAvailable: false,
+      safetyCopyVisible: true,
+      firstRunChecklistAvailable: true,
+    });
+
+    expect(state.nextAction).toBe("Select or confirm a workspace, then run Analyze this workspace.");
+  });
+
+  it("uses the needs-attention next action when startup is not ready", () => {
+    const state = buildPaperclipDemoReadinessState({
+      startupReady: false,
+      diagnosticsAvailable: false,
+      workspaceSelected: false,
+      analyzeAvailable: false,
+      safetyCopyVisible: true,
+      firstRunChecklistAvailable: true,
+    });
+
+    expect(state.nextAction).toBe("Review Startup status and Setup Health before starting the walkthrough.");
   });
 });
 

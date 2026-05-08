@@ -25,6 +25,7 @@ import { readLocalFallbackCandidateSignal } from "@/lib/local-fallback-offer";
 import { queryKeys } from "@/lib/queryKeys";
 import {
   buildAnalyzeWorkspaceFeedbackQuestions,
+  buildPaperclipDemoReadinessState,
   buildAnalyzeWorkspaceFlowSteps,
   buildFirstSuccessfulRunState,
   buildPaperclipStartupState,
@@ -49,6 +50,7 @@ import {
   type AnalyzeWorkspaceResultValidationResult,
   type AnalyzeWorkspaceSetupState,
   type FirstSuccessfulRunState,
+  type PaperclipDemoReadinessState,
   type PaperclipStartupState,
   type SetupHealthCard,
   type SetupHealthDiagnostics,
@@ -691,6 +693,14 @@ export function SetupHealth() {
     cloudAiStatus: displayedDiagnostics.cloudAi?.authStatus ?? "unknown",
     workspaceSelected: displayedDiagnostics.workspace?.selected === true,
   }), [areRunsLoading, diagnostics, displayedDiagnostics, isHealthLoading, viewMode]);
+  const demoReadinessState = useMemo<PaperclipDemoReadinessState>(() => buildPaperclipDemoReadinessState({
+    startupReady: startupState.ready,
+    diagnosticsAvailable: viewMode === "mock" ? true : Boolean(diagnostics),
+    workspaceSelected: Boolean(workspaceName && workspaceName !== "None"),
+    analyzeAvailable: viewModel.primaryAction.disabled !== true,
+    safetyCopyVisible: true,
+    firstRunChecklistAvailable: true,
+  }), [diagnostics, startupState.ready, viewMode, viewModel.primaryAction.disabled, workspaceName]);
   const firstSuccessfulRunState = useMemo<FirstSuccessfulRunState>(() => buildFirstSuccessfulRunState({
     workspaceSelected: Boolean(workspaceName && workspaceName !== "None"),
     readOnlyConfirmed: analyzeFlowState === "ready" || analyzeFlowState === "prepared" || analyzeFlowState === "collected",
@@ -1023,6 +1033,45 @@ export function SetupHealth() {
         </CardContent>
       </Card>
 
+      <Card className="gap-4 py-5">
+        <CardHeader className="gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <Badge
+              variant={demoReadinessState.status === "ready" ? "default" : demoReadinessState.status === "almost_ready" ? "secondary" : "destructive"}
+            >
+              {demoReadinessState.status.replace(/_/g, " ")}
+            </Badge>
+          </div>
+          <CardTitle>{demoReadinessState.title}</CardTitle>
+          <CardDescription>{demoReadinessState.summary}</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <div className="rounded-md border border-sky-500/20 bg-sky-500/5 px-3 py-3 text-sm text-muted-foreground">
+            <div className="font-medium text-foreground">Next action</div>
+            <div className="mt-1">{demoReadinessState.nextAction}</div>
+          </div>
+          <div className="rounded-md border border-border/70 bg-background/70 px-3 py-3 text-sm text-muted-foreground">
+            {demoReadinessState.privateAlphaNote}
+          </div>
+          <div className="space-y-2">
+            {demoReadinessState.items.map((item) => (
+              <div
+                key={item.id}
+                className="rounded-md border border-border/60 bg-background/80 px-3 py-2 text-sm"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="font-medium text-foreground">{item.label}</div>
+                  <Badge variant={item.status === "pass" ? "default" : item.status === "warning" ? "secondary" : "destructive"}>
+                    {item.status}
+                  </Badge>
+                </div>
+                <div className="mt-1 text-muted-foreground">{item.description}</div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
       <Card className={cn("gap-5 py-5", overallToneClasses(viewModel.overallStatus))}>
         <CardHeader className="gap-3">
           <div className="flex flex-wrap items-center gap-3">
@@ -1132,6 +1181,18 @@ export function SetupHealth() {
                   <div className="mt-1 text-muted-foreground">{step.description}</div>
                 </div>
               ))}
+            </div>
+          </div>
+
+          <div className="rounded-md border border-border/70 bg-background/70 px-3 py-3">
+            <div className="text-sm font-medium text-foreground">Recommended alpha walkthrough</div>
+            <div className="mt-2 space-y-1 text-sm text-muted-foreground">
+              <div>1. Collect limited metadata</div>
+              <div>2. Review first summary</div>
+              <div>3. Optionally approve README excerpt</div>
+              <div>4. Optionally approve manifest fields</div>
+              <div>5. Review what was inspected and what was not inspected</div>
+              <div>6. Share feedback</div>
             </div>
           </div>
 

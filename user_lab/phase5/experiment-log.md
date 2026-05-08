@@ -123,3 +123,9 @@ Change: Added a startup transparency model, a Setup Health startup panel, and te
 Expected effect: Reduce tester uncertainty during app launch by showing what Paperclip is checking, what it is not doing, and when Setup Health is truly ready.
 Observed result: Setup Health now surfaces a calm startup panel with readiness steps, conservative local AI wording, a read-only slow-start hint, and supporting docs for startup findings and tester expectations.
 Next action: Run focused tests and typechecks, then review the diff, commit, and push Phase 5Q.
+
+Time: 2026-05-08T23:00:00+0200
+Change: Added a ready-to-demo model, a compact demo-readiness panel, walkthrough guardrails, and operator-facing alpha demo docs.
+Expected effect: Help an operator quickly decide whether Paperclip is ready for a private-alpha walkthrough and what the first safe click path should be.
+Observed result: Setup Health now distinguishes ready, almost-ready, and needs-attention demo states, points to the next action, and includes a lightweight walkthrough guide that stays inside the current safety model.
+Next action: Run focused tests and typechecks, then review the diff, commit, and push Phase 5R.
