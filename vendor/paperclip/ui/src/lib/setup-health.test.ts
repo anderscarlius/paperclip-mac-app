@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildAnalyzeWorkspaceFlowSteps,
   buildAnalyzeWorkspaceRequest,
   buildReadmeExcerptRequest,
   buildAnalyzeWorkspaceResultFromMetadata,
@@ -12,6 +13,87 @@ import {
   validateAnalyzeWorkspaceResult,
   validateAnalyzeWorkspaceMetadataSnapshot,
 } from "./setup-health";
+
+describe("setup-health flow steps", () => {
+  it("shows setup checked as current in the initial state", () => {
+    const steps = buildAnalyzeWorkspaceFlowSteps({
+      confirmationOpen: false,
+      requestPrepared: false,
+      metadataCollected: false,
+      firstResultAvailable: false,
+      readmeCandidateAvailable: false,
+      readmeExcerptRead: false,
+    });
+
+    expect(steps.find((step) => step.id === "setup_health")?.status).toBe("current");
+  });
+
+  it("marks request prepared complete after metadata collection begins", () => {
+    const steps = buildAnalyzeWorkspaceFlowSteps({
+      confirmationOpen: true,
+      requestPrepared: true,
+      metadataCollected: true,
+      firstResultAvailable: false,
+      readmeCandidateAvailable: false,
+      readmeExcerptRead: false,
+    });
+
+    expect(steps.find((step) => step.id === "request_prepared")?.status).toBe("complete");
+  });
+
+  it("marks metadata collected complete when the first result is available", () => {
+    const steps = buildAnalyzeWorkspaceFlowSteps({
+      confirmationOpen: true,
+      requestPrepared: true,
+      metadataCollected: true,
+      firstResultAvailable: true,
+      readmeCandidateAvailable: false,
+      readmeExcerptRead: false,
+    });
+
+    expect(steps.find((step) => step.id === "metadata_collected")?.status).toBe("complete");
+  });
+
+  it("marks README excerpt as optional when a candidate exists", () => {
+    const steps = buildAnalyzeWorkspaceFlowSteps({
+      confirmationOpen: true,
+      requestPrepared: true,
+      metadataCollected: true,
+      firstResultAvailable: true,
+      readmeCandidateAvailable: true,
+      readmeExcerptRead: false,
+    });
+
+    expect(steps.find((step) => step.id === "readme_excerpt")?.status).toBe("optional");
+  });
+
+  it("marks README excerpt disabled when no candidate exists", () => {
+    const steps = buildAnalyzeWorkspaceFlowSteps({
+      confirmationOpen: true,
+      requestPrepared: true,
+      metadataCollected: true,
+      firstResultAvailable: true,
+      readmeCandidateAvailable: false,
+      readmeExcerptRead: false,
+    });
+
+    expect(steps.find((step) => step.id === "readme_excerpt")?.status).toBe("disabled");
+  });
+
+  it("marks improved summary current when the README excerpt has been read", () => {
+    const steps = buildAnalyzeWorkspaceFlowSteps({
+      confirmationOpen: true,
+      requestPrepared: true,
+      metadataCollected: true,
+      firstResultAvailable: true,
+      readmeCandidateAvailable: true,
+      readmeExcerptRead: true,
+    });
+
+    expect(steps.find((step) => step.id === "readme_excerpt")?.status).toBe("complete");
+    expect(steps.find((step) => step.id === "improved_summary")?.status).toBe("current");
+  });
+});
 
 describe("setup-health metadata snapshot helpers", () => {
   it("detects .env as sensitive", () => {

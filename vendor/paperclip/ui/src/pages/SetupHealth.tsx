@@ -24,6 +24,7 @@ import { useCompany } from "@/context/CompanyContext";
 import { readLocalFallbackCandidateSignal } from "@/lib/local-fallback-offer";
 import { queryKeys } from "@/lib/queryKeys";
 import {
+  buildAnalyzeWorkspaceFlowSteps,
   buildAnalyzeWorkspaceResultFromMetadata,
   buildReadmeExcerptRequest,
   collectAnalyzeWorkspaceTopLevelMetadataFromProvidedEntries,
@@ -69,11 +70,18 @@ const MOCK_METADATA_ENTRIES: Record<MockStateId, Array<{ name: string; kind: "fi
     { name: "Tests", kind: "directory" },
     { name: "docs", kind: "directory" },
   ],
+  ready_no_readme: [
+    { name: "Package.swift", kind: "file" },
+    { name: "Sources", kind: "directory" },
+    { name: "Tests", kind: "directory" },
+    { name: "docs", kind: "directory" },
+  ],
 };
 const MOCK_README_EXCERPTS: Record<MockStateId, string | null> = {
   needs_attention: null,
   workspace_warning: "# Paperclip Demo\n\nA lightweight Mac app for safe AI workspace analysis.\n",
   ready: "# Paperclip App\n\nA Swift workspace for the Paperclip desktop application.\n",
+  ready_no_readme: null,
 };
 
 function severityBadgeVariant(severity: SetupHealthSeverity): "default" | "secondary" | "outline" | "destructive" {
@@ -427,6 +435,17 @@ export function SetupHealth() {
     () => metadataCollectionResult?.ok ? findReadmeCandidatesFromSnapshot(metadataCollectionResult.snapshot) : [],
     [metadataCollectionResult],
   );
+  const analyzeFlowSteps = useMemo(
+    () => buildAnalyzeWorkspaceFlowSteps({
+      confirmationOpen: analyzeFlowState === "confirm" || analyzeFlowState === "ready" || analyzeFlowState === "prepared" || analyzeFlowState === "collected",
+      requestPrepared: analyzeFlowState === "prepared" || analyzeFlowState === "collected",
+      metadataCollected: analyzeFlowState === "collected" && metadataCollectionResult?.ok === true,
+      firstResultAvailable: firstWorkspaceResult !== null,
+      readmeCandidateAvailable: readmeCandidates.length > 0,
+      readmeExcerptRead: readmeExcerpt !== null,
+    }),
+    [analyzeFlowState, firstWorkspaceResult, metadataCollectionResult, readmeCandidates.length, readmeExcerpt],
+  );
 
   const sourceNote = useMemo(() => {
     if (viewMode === "mock") {
@@ -695,6 +714,32 @@ export function SetupHealth() {
               ) : null}
             </div>
           ) : null}
+
+          <div className="rounded-md border border-border/70 bg-background/70 px-3 py-3">
+            <div className="text-sm font-medium text-foreground">Analyze Workspace flow</div>
+            <div className="mt-1 text-sm text-muted-foreground">
+              Paperclip will show you what it inspected, what it did not inspect, and whether any file contents were read.
+            </div>
+            <div className="mt-2 text-sm text-muted-foreground">
+              This private alpha does not yet run AI analysis or edit code.
+            </div>
+            <div className="mt-4 space-y-2">
+              {analyzeFlowSteps.map((step) => (
+                <div
+                  key={step.id}
+                  className="rounded-md border border-border/60 bg-background/80 px-3 py-2 text-sm"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="font-medium text-foreground">{step.label}</div>
+                    <Badge variant={step.status === "complete" ? "default" : step.status === "current" ? "secondary" : "outline"}>
+                      {step.status.replace(/_/g, " ")}
+                    </Badge>
+                  </div>
+                  <div className="mt-1 text-muted-foreground">{step.description}</div>
+                </div>
+              ))}
+            </div>
+          </div>
 
           {analyzeFlowState === "confirm" ? (
             <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-4">
@@ -983,8 +1028,8 @@ export function SetupHealth() {
                         </div>
                         <div className="mt-2">
                           {readmeExcerpt
-                            ? "This result uses limited metadata and one approved README excerpt."
-                            : "This is a metadata-only first result."}
+                            ? "This result uses limited top-level metadata and one approved README excerpt."
+                            : "This first result is based only on limited top-level metadata."}
                         </div>
                         <div>
                           {readmeExcerpt
@@ -992,7 +1037,7 @@ export function SetupHealth() {
                             : "No file contents were read."}
                         </div>
                         <div>No commands were run.</div>
-                        <div>No AI was used for this result.</div>
+                        <div>No AI was used.</div>
                         <div>No recursive scan was performed.</div>
 
                         <div className="mt-4 space-y-4">
@@ -1150,6 +1195,15 @@ export function SetupHealth() {
                                 </Collapsible>
                               </div>
                             ) : null}
+                          </div>
+
+                          <div className="rounded-md border border-border/70 bg-background/70 px-3 py-3">
+                            <div className="font-medium text-foreground">What’s next?</div>
+                            <div className="mt-2 space-y-1 text-muted-foreground">
+                              <div>Read selected manifest fields — coming next</div>
+                              <div>Improve summary with Cloud AI — coming later</div>
+                              <div>Inspect project structure — coming later</div>
+                            </div>
                           </div>
                         </div>
                       </div>

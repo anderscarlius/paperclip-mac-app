@@ -93,3 +93,9 @@ Change: Added an explicit, user-approved top-level README excerpt reader with a 
 Expected effect: Improve the first summary using one safe documentation excerpt while keeping the workflow read-only, non-recursive, command-free, and AI-free.
 Observed result: Paperclip can now offer a `Read small README excerpt` step, read only an allowed top-level README file, record the read transparently, and improve the first result without overclaiming.
 Next action: Run focused tests and typechecks, then review the diff, commit, and push Phase 5L.
+
+Time: 2026-05-08T11:57:14+0200
+Change: Polished the first-user Analyze Workspace journey with a flow step model, a progress panel, clearer metadata-only and README-enhanced result copy, and private-alpha demo documentation.
+Expected effect: Make the private alpha easier to demo by showing where the user is in the flow, what happened, what did not happen, and what the safe next actions are.
+Observed result: Setup Health now presents a coherent step-by-step Analyze Workspace experience with stronger safety framing, a visible `What’s next?` section, and internal docs that explain current alpha readiness and how to demo it.
+Next action: Run focused tests and typechecks, then review the diff, commit, and push Phase 5M.

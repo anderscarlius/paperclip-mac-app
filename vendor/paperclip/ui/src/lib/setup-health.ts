@@ -358,6 +358,22 @@ export type AnalyzeWorkspaceReadmeExcerpt = {
   };
 };
 
+export type AnalyzeWorkspaceFlowStepId =
+  | "setup_health"
+  | "confirm_read_only"
+  | "request_prepared"
+  | "metadata_collected"
+  | "first_summary"
+  | "readme_excerpt"
+  | "improved_summary";
+
+export type AnalyzeWorkspaceFlowStep = {
+  id: AnalyzeWorkspaceFlowStepId;
+  label: string;
+  status: "not_started" | "current" | "complete" | "optional" | "disabled";
+  description: string;
+};
+
 export type SetupHealthDiagnostics = {
   cloudAi?: {
     authStatus?: "connected" | "missing" | "unknown";
@@ -876,6 +892,95 @@ export function buildReadmeExcerptRequest(input: {
       allowAI: false,
     },
   };
+}
+
+export function buildAnalyzeWorkspaceFlowSteps(input: {
+  confirmationOpen: boolean;
+  requestPrepared: boolean;
+  metadataCollected: boolean;
+  firstResultAvailable: boolean;
+  readmeCandidateAvailable: boolean;
+  readmeExcerptRead: boolean;
+}): AnalyzeWorkspaceFlowStep[] {
+  const {
+    confirmationOpen,
+    requestPrepared,
+    metadataCollected,
+    firstResultAvailable,
+    readmeCandidateAvailable,
+    readmeExcerptRead,
+  } = input;
+
+  return [
+    {
+      id: "setup_health",
+      label: "Setup checked",
+      status: confirmationOpen || requestPrepared || metadataCollected || firstResultAvailable
+        ? "complete"
+        : "current",
+      description: "Workspace readiness and safety signals are visible before analysis starts.",
+    },
+    {
+      id: "confirm_read_only",
+      label: "Read-only confirmed",
+      status: requestPrepared || metadataCollected || firstResultAvailable
+        ? "complete"
+        : confirmationOpen
+          ? "current"
+          : "not_started",
+      description: "The user explicitly confirms a safe read-only first run.",
+    },
+    {
+      id: "request_prepared",
+      label: "Request prepared",
+      status: metadataCollected || firstResultAvailable
+        ? "complete"
+        : requestPrepared
+          ? "current"
+          : "not_started",
+      description: "Paperclip prepares a validated request without starting execution.",
+    },
+    {
+      id: "metadata_collected",
+      label: "Limited metadata collected",
+      status: firstResultAvailable
+        ? "complete"
+        : metadataCollected
+          ? "current"
+          : "not_started",
+      description: "Only immediate top-level names and types are collected.",
+    },
+    {
+      id: "first_summary",
+      label: "First summary",
+      status: readmeExcerptRead
+        ? "complete"
+        : firstResultAvailable
+          ? "current"
+          : "not_started",
+      description: "Paperclip builds a first conservative summary from safe metadata.",
+    },
+    {
+      id: "readme_excerpt",
+      label: "README excerpt",
+      status: readmeExcerptRead
+        ? "complete"
+        : readmeCandidateAvailable
+          ? firstResultAvailable
+            ? "optional"
+            : "not_started"
+          : "disabled",
+      description: readmeCandidateAvailable
+        ? "An optional top-level README excerpt can improve the first summary."
+        : "No top-level README candidate was found for the optional deeper read.",
+    },
+    {
+      id: "improved_summary",
+      label: "Improved summary",
+      status: readmeExcerptRead ? "current" : "not_started",
+      description: "The summary is updated after one approved README excerpt is read.",
+    },
+  ];
 }
 
 export function buildAnalyzeWorkspaceMetadataSnapshotFromEntries(input: {
@@ -2006,6 +2111,12 @@ export const mockSetupHealthStates = [
   {
     id: "ready",
     label: "Ready",
+    diagnostics: mockSetupHealthReadyDiagnostics,
+    viewModel: mockSetupHealthReady,
+  },
+  {
+    id: "ready_no_readme",
+    label: "Ready (No README)",
     diagnostics: mockSetupHealthReadyDiagnostics,
     viewModel: mockSetupHealthReady,
   },

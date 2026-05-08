@@ -646,6 +646,8 @@ describe("SetupHealth", () => {
     expect(container.textContent).toContain("No files have been read or changed.");
     expect(container.textContent).toContain("No commands have been run.");
     expect(container.textContent).toContain("Future safe metadata scope");
+    expect(container.textContent).toContain("Analyze Workspace flow");
+    expect(container.textContent).toContain("Request prepared");
     expect(container.textContent).toContain("No recursive scan will be performed.");
     expect(container.textContent).toContain("Secrets will not be read.");
     expect(container.textContent).not.toContain("Project summary");
@@ -701,18 +703,25 @@ describe("SetupHealth", () => {
       await Promise.resolve();
     });
 
+    expect(container.textContent).toContain("Analyze Workspace flow");
+    expect(container.textContent).toContain("Request prepared");
+    expect(container.textContent).toContain("Limited metadata collected");
     expect(container.textContent).toContain("Limited read-only metadata collected");
     expect(container.textContent).toContain("No file contents were read.");
     expect(container.textContent).toContain("No commands were run.");
     expect(container.textContent).toContain("No recursive scan was performed.");
     expect(container.textContent).toContain("First workspace summary");
-    expect(container.textContent).toContain("This is a metadata-only first result.");
-    expect(container.textContent).toContain("No AI was used for this result.");
+    expect(container.textContent).toContain("This first result is based only on limited top-level metadata.");
+    expect(container.textContent).toContain("No AI was used.");
     expect(container.textContent).toContain("Project summary");
     expect(container.textContent).toContain("Detected languages/tools");
     expect(container.textContent).toContain("Swift");
     expect(container.textContent).toContain("What I inspected");
     expect(container.textContent).toContain("What I did not inspect");
+    expect(container.textContent).toContain("What’s next?");
+    expect(container.textContent).toContain("Read selected manifest fields — coming next");
+    expect(container.textContent).toContain("Improve summary with Cloud AI — coming later");
+    expect(container.textContent).toContain("Inspect project structure — coming later");
     expect(container.textContent).not.toContain("tests passed");
     expect(container.textContent).not.toContain("security posture is verified");
 
@@ -767,6 +776,7 @@ describe("SetupHealth", () => {
 
     expect(container.textContent).toContain("Read small README excerpt");
     expect(container.textContent).toContain("up to 4 KB");
+    expect(container.textContent).toContain("optional and read-only");
 
     const readmeButton = Array.from(container.querySelectorAll("button"))
       .find((button) => button.textContent?.trim() === "Read small README excerpt");
@@ -777,11 +787,63 @@ describe("SetupHealth", () => {
 
     expect(container.textContent).toContain("README excerpt read");
     expect(container.textContent).toContain("README.md");
-    expect(container.textContent).toContain("This result uses limited metadata and one approved README excerpt.");
+    expect(container.textContent).toContain("This result uses limited top-level metadata and one approved README excerpt.");
     expect(container.textContent).toContain("A small approved README excerpt was read.");
     expect(container.textContent).toContain("No commands were run.");
-    expect(container.textContent).toContain("No AI was used for this result.");
+    expect(container.textContent).toContain("No AI was used.");
     expect(container.textContent).not.toContain("No file contents were read.");
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("shows no README candidate messaging when the snapshot has no top-level README", async () => {
+    const root = renderSetupHealth(container);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const mockModeButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Mock states");
+    act(() => {
+      mockModeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const readyButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Ready (No README)");
+    act(() => {
+      readyButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const analyzeButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Analyze this workspace");
+    act(() => {
+      analyzeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const continueButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Continue");
+    act(() => {
+      continueButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const prepareButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Prepare request");
+    act(() => {
+      prepareButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const collectButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Collect limited metadata");
+    await act(async () => {
+      collectButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain("No top-level README candidate was found.");
+    expect(container.textContent).toContain("README excerpt");
 
     act(() => {
       root.unmount();
